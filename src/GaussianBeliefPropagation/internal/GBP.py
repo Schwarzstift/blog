@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Callable, Tuple, Union, Any
 import numpy as np
 
 
@@ -21,7 +21,7 @@ class GaussianState:
         if lam is not None and lam.shape == (self.dim, self.dim):
             self.lam = lam
         else:
-            self.lam = np.zeros([self.dim, self.dim])
+            self.lam = np.identity(self.dim)
 
 
 class VariableNode:
@@ -67,25 +67,56 @@ class VariableNode:
 class FactorNode:
     __doc__ = "Factor node modelling the dependencies between variable nodes as a gaussian distribution."
 
-    def __init__(self, factor: GaussianState, adj_variable_nodes: List[VariableNode]):
+    def __init__(self, adj_variable_nodes: List[VariableNode],
+                 measurement_fn: Callable[[List[np.ndarray], Any], np.ndarray],
+                 measurement_noise: np.ndarray,
+                 measurement: Union[np.ndarray, float],
+                 jacobian_fn: Callable[[List[np.ndarray], Any], np.ndarray],
+                 args: Any):
         """
         Initialize internal variables & adds itself to all adjacent variable nodes
-        :param factor: The gaussian factor of this factor node. Has to have the same dim. as all adj. variable nodes
         :param adj_variable_nodes: all variable nodes, which are adjacent to this factor node
+        :param measurement_fn: the measurement function
+        :param measurement_noise: gaussian covariance matrix representing measurement noise
+        :param measurement: the actual measurement
+        :param jacobian_fn: the jacobian of the measurement function
+        :param args: any additional args for the measurement/jacobian function
         """
-        self.factor = factor
         self.adj_variable_nodes = adj_variable_nodes
+        self.measurement_fn = measurement_fn
+        self.measurement_noise = measurement_noise
+        self.measurement = measurement
+        self.jacobian_fn = jacobian_fn
+        self.args = args
         self.adj_variable_messages = {}
         self.messages_to_adj_variables = {}
 
-        number_of_conditional_variables = 0  # just as a sanity check
+        self.number_of_conditional_variables = 0  # just as a sanity check
         for variable_node in self.adj_variable_nodes:
             variable_node.adj_factors.append(self)  # bind factor to variable
-            number_of_conditional_variables += variable_node.dimensions
+            self.number_of_conditional_variables += variable_node.dimensions
             self.adj_variable_messages[variable_node.idx] = variable_node.belief
             self.messages_to_adj_variables[variable_node.idx] = GaussianState(variable_node.dimensions)
 
-        assert (self.factor.dim == number_of_conditional_variables)
+    def compute_factor(self) -> Tuple[np.ndarray, np.ndarray]:
+        linearization_point = []
+        for belief in self.adj_variable_messages.values():
+            mean = np.linalg.inv(belief.lam) @ belief.eta
+            linearization_point.append(mean)  # Linearize around mean of adj. vars
+        jacobian = self.jacobian_fn(linearization_point, *self.args)
+
+        predicted_measurement = self.measurement_fn(linearization_point, *self.args)
+        if isinstance(self.measurement, float):
+            inverse_measurement_noise = 1 / self.measurement_noise
+            lam = inverse_measurement_noise * np.outer(jacobian, jacobian)
+            eta = inverse_measurement_noise * jacobian.T * (
+                    jacobian @ linearization_point + self.measurement - predicted_measurement)
+        else:
+            inverse_measurement_noise = np.linalg.inv(self.measurement_noise)
+            eta = jacobian.T @ inverse_measurement_noise * (self.measurement - predicted_measurement)
+            lam = jacobian.T @ inverse_measurement_noise @ jacobian
+
+        return eta, lam
 
     def receive_message_from(self, variable_idx: int, eta_message: np.ndarray, lam_message: np.ndarray):
         """
@@ -113,9 +144,10 @@ class FactorNode:
 
         See this blog post Appendix B for the equations: https://gaussianbp.github.io/
         """
+        current_eta_factor, current_lam_factor = self.compute_factor()
         current_variable_position = 0
         for variable_node in self.adj_variable_nodes:
-            eta_factor, lam_factor = self.factor.eta.copy(), self.factor.lam.copy()
+            eta_factor, lam_factor = current_eta_factor.copy(), current_lam_factor.copy()
 
             # For every node take the product of factor and incoming messages
             current_factor_position = 0

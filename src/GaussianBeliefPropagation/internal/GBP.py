@@ -237,6 +237,6 @@ class FactorGraph:
         """
         Triggers a single synchronous iteration over all nodes (factor and variable nodes)
         """
+        self.relinerize_factors()
         self.compute_all_messages()
         self.update_all_beliefs()
-        self.relinerize_factors()

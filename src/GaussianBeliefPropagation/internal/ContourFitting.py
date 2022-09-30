@@ -7,11 +7,10 @@ from GBP import *
 np.random.seed(44)
 
 
-# np.random.seed(43)
-
-
 # ---------------------------- VISUALIZATION ------------------------------------
 class ContourFittingViz:
+    __doc__ = "Simple class containing all plotting stuff"
+
     def __init__(self, v_nodes: List[VariableNode], measurements: List[np.ndarray], num_iterations):
         self.fig, self.ax = plt.subplots()
         self.ax.set_ylim(0, 1)
@@ -27,6 +26,9 @@ class ContourFittingViz:
         self.iterations = [y_positions]
 
     def render(self):
+        """
+        Renders animation of the complete run
+        """
 
         self.ax.scatter(self.measurements_x, self.measurements_y)
         self.ax.scatter(self.x_positions, self.iterations[0])
@@ -44,6 +46,10 @@ class ContourFittingViz:
         plt.show()
 
     def add_iteration(self, v_nodes: List[VariableNode]):
+        """
+        Saves all intermediate estimates for later plotting
+        :param v_nodes: current nodes containing the estimates
+        """
         y_positions = []
         for v in v_nodes:
             y_positions.append(v.mu)
@@ -52,6 +58,12 @@ class ContourFittingViz:
 
 # ---------------------- FACTOR GRAPH SPECIFIC STUFF ----------------------------
 def generate_variable_nodes(num_variable_nodes: int, dims) -> List[VariableNode]:
+    """
+    Generates variable nodes with an x pos uniform over the interval [0,1]
+    :param num_variable_nodes: number of nodes to generate
+    :param dims: dimensions for each node
+    :return: list containing all generated nodes
+    """
     nodes = []
     for i in range(num_variable_nodes):
         node = VariableNode(dims)
@@ -62,15 +74,28 @@ def generate_variable_nodes(num_variable_nodes: int, dims) -> List[VariableNode]
 
 
 def smoothing(means: List[np.ndarray]) -> np.ndarray:
-    # assert (len(means) == 2, "Smoothing factor is only defined on two variable nodes. Num vars: " + str(len(means)))
+    """
+    Measurement function of the smoothing factor node
+    Simple smoothing function, forcing the nodes to hold similar height values
+    :param means: height estimates for each adjacent nodes (to the factor
+    """
     return means[0] - means[1]
 
 
 def smoothing_jac(linearization_point: List[np.ndarray]) -> np.ndarray:
+    """
+    Jacobian of the smoothing function
+    :param linearization_point: point of evaluation (not used as linear)
+    """
     return np.array([1, -1])
 
 
 def generate_smoothing_factors(v_nodes: List[VariableNode]) -> List[FactorNode]:
+    """
+    Generate factor nodes with the above defined smoothing measurement function
+    :param v_nodes: all variable nodes
+    :return: list of all smoothing factor nodes
+    """
     f_nodes = []
     for i in range(len(v_nodes) - 1):
         adj_vars = [v_nodes[i], v_nodes[i + 1]]
@@ -83,6 +108,14 @@ def generate_smoothing_factors(v_nodes: List[VariableNode]) -> List[FactorNode]:
 
 
 def measurement_fn(means: List[np.ndarray], x_pos_i: float, x_pos_j: float, x_pos_of_measurement: float) -> np.ndarray:
+    """
+    Simple measurement function which divides the measurement between two factors
+    :param means: current height estimate of the nodes
+    :param x_pos_i: x position of the left variable
+    :param x_pos_j: x position of the right variable
+    :param x_pos_of_measurement: x position of the measurement
+    :return: measurement
+    """
     x_m = x_pos_of_measurement
     x_i = x_pos_i
     x_j = x_pos_j
@@ -94,6 +127,14 @@ def measurement_fn(means: List[np.ndarray], x_pos_i: float, x_pos_j: float, x_po
 
 def measurement_fn_jac(means: List[np.ndarray], x_pos_i: float, x_pos_j: float,
                        x_pos_of_measurement: float) -> np.ndarray:
+    """
+    Jacobian of the measurement function above
+    :param means: current height estimate of the nodes
+    :param x_pos_i: x position of the left variable
+    :param x_pos_j: x position of the right variable
+    :param x_pos_of_measurement: x position of the measurement
+    :return: Jacobian
+    """
     x_m = x_pos_of_measurement
     x_i = x_pos_i
     x_j = x_pos_j
@@ -103,6 +144,13 @@ def measurement_fn_jac(means: List[np.ndarray], x_pos_i: float, x_pos_j: float,
 
 def generate_measurement_factors(v_nodes: List[VariableNode], measurement_generator,
                                  num_measurements: int = 10) -> Tuple[List[FactorNode], List[np.ndarray]]:
+    """
+    Generates the measurement factors and measurements (one factor for each measurement)
+    :param v_nodes: all variable nodes
+    :param measurement_generator:  measurement generating function
+    :param num_measurements: number of measurements to generate
+    :return: list of all measurement factors
+    """
     f_nodes = []
     gen_meas = []
     for i in range(num_measurements):
@@ -121,12 +169,20 @@ def generate_measurement_factors(v_nodes: List[VariableNode], measurement_genera
 
 
 def generate_measurement_line():
+    """
+    Samples measurements from a straight line
+    :return: measurement (x,y)
+    """
     height_measurement = 0.7 + np.random.random() * 0.1
     x_pos = np.random.random()
     return x_pos, height_measurement
 
 
 def generate_measurement_step():
+    """
+    Samples measuremetns from a step function
+    :return: measurement (x,y)
+    """
     height_measurement = np.random.random() * 0.1
     x_pos = np.random.random()
     if x_pos > 0.5:
@@ -135,9 +191,13 @@ def generate_measurement_step():
 
 
 def generate_measurement_rect():
+    """
+    Samples from a rectangle signal
+    :return: measurement (x,y)
+    """
     height_measurement = np.random.random() * 0.05
     x_pos = np.random.random()
-    if x_pos > 0.33 and x_pos < 0.66:
+    if 0.33 < x_pos < 0.66:
         height_measurement += 0.5
     return x_pos, height_measurement
 

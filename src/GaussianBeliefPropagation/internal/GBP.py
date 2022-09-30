@@ -3,6 +3,7 @@ from typing import List, Callable, Tuple, Union, Any
 import numpy as np
 from copy import deepcopy
 
+
 class GaussianState:
     __doc__ = "This class holds a possibly multi dimensional state in canonical form"
 
@@ -33,7 +34,6 @@ class VariableNode:
         """
         Initialize the belief and prior with gaussian states
         :param dimensions: the dimensions of the gaussian state
-        :param idx: an id unique over all variable nodes.
         """
         self.idx = VariableNode.idx_counter
         VariableNode.idx_counter += 1
@@ -111,6 +111,10 @@ class FactorNode:
             self.messages_to_adj_variables[variable_node.idx] = GaussianState(variable_node.dimensions)
             self.linearization_point.append(np.zeros_like(variable_node.belief.eta))
 
+        self.factor_eta = None
+        self.factor_lam = None
+        self.compute_factor()
+
     def receive_message_from(self, variable_idx: int, eta_message: np.ndarray, lam_message: np.ndarray):
         """
         Stores the new variable to factor message for the next iteration
@@ -124,23 +128,33 @@ class FactorNode:
     def get_message_for(self, variable_node_idx: int):
         """
         Simple getter function to retrieve the correct message for a given variable node
-        :param variable_node_idx: message from this factor to variable_node
+        :param variable_node_idx: idx of variable, which message should be returned
         :return: eta_message and lam_message
         """
         return self.messages_to_adj_variables[variable_node_idx].eta.copy(), \
                self.messages_to_adj_variables[variable_node_idx].lam.copy()
 
     def relinearize(self):
+        """
+        Calculates a new mean of adjacent variables, if possible. This used as the new linearization point.
+        """
         linearization_point = []
+        update_factor = True
         for belief in self.adj_variable_messages.values():
             if np.linalg.det(belief.lam) != 0:  # if possible relinearize
                 mean = np.linalg.inv(belief.lam) @ belief.eta
                 linearization_point.append(mean)  # Linearize around mean of adj. vars
             else:
-                return  # keep old lin point
-        self.linearization_point = linearization_point
+                update_factor = False
+        if update_factor:
+            self.linearization_point = linearization_point
+            self.compute_factor()
 
-    def compute_factor(self) -> Tuple[np.ndarray, np.ndarray]:
+    def compute_factor(self):
+        """
+        Computes the factor of the factor node.
+        Should be called, when the linearization point changes.
+        """
         jacobian = self.jacobian_fn(self.linearization_point, *self.args)
 
         predicted_measurement = self.measurement_fn(self.linearization_point, *self.args)
@@ -155,7 +169,8 @@ class FactorNode:
                     self.measurement - (predicted_measurement - (jacobian @ np.array(self.linearization_point))))
             lam = jacobian.T @ inverse_measurement_noise @ jacobian
 
-        return eta, lam
+        self.factor_eta = eta
+        self.factor_lam = lam
 
     def compute_outgoing_messages(self):
         """
@@ -164,7 +179,7 @@ class FactorNode:
 
         See this blog post Appendix B for the equations: https://gaussianbp.github.io/
         """
-        current_eta_factor, current_lam_factor = self.compute_factor()
+        current_eta_factor, current_lam_factor = self.factor_eta, self.factor_lam
         current_variable_position = 0
         for variable_node_idx in self.adj_variable_node_idxs:
             variable_node = self.variable_nodes[variable_node_idx]
@@ -229,7 +244,10 @@ class FactorGraph:
         for variable_node in self.variable_nodes:
             variable_node.update_belief()
 
-    def relinerize_factors(self):
+    def relinearize_factors(self):
+        """
+        Calculates new linearization points for all factors if possible
+        """
         for factor in self.factor_nodes:
             factor.relinearize()
 
@@ -237,6 +255,6 @@ class FactorGraph:
         """
         Triggers a single synchronous iteration over all nodes (factor and variable nodes)
         """
-        self.relinerize_factors()
+        self.relinearize_factors()
         self.compute_all_messages()
         self.update_all_beliefs()

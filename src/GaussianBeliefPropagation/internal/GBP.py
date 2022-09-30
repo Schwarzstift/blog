@@ -1,6 +1,7 @@
+import sys
 from typing import List, Callable, Tuple, Union, Any
 import numpy as np
-
+from copy import deepcopy
 
 class GaussianState:
     __doc__ = "This class holds a possibly multi dimensional state in canonical form"
@@ -21,23 +22,26 @@ class GaussianState:
         if lam is not None and lam.shape == (self.dim, self.dim):
             self.lam = lam
         else:
-            self.lam = np.identity(self.dim)
+            self.lam = np.zeros([self.dim, self.dim])
 
 
 class VariableNode:
     __doc__ = "Represents a gaussian distributed multi dimensional random variable in a factor graph."
+    idx_counter = 0
 
-    def __init__(self, dimensions: int, idx: int):
+    def __init__(self, dimensions: int):
         """
         Initialize the belief and prior with gaussian states
         :param dimensions: the dimensions of the gaussian state
         :param idx: an id unique over all variable nodes.
         """
-        self.idx = idx
+        self.idx = VariableNode.idx_counter
+        VariableNode.idx_counter += 1
         self.belief = GaussianState(dimensions)
         self.prior = GaussianState(dimensions)
         self.dimensions = dimensions
-        self.adj_factors = []  # will be filled by Factors on creation
+        self.adj_factors_idx = []  # will be filled by Factors on creation
+        self.factor_nodes = []  # will be filled at the end by the FactorGraph
 
         self.mu = np.zeros(dimensions)  # for debug/output purpose
         self.sigma = np.zeros([dimensions, dimensions])  # for debug/output purpose
@@ -48,24 +52,28 @@ class VariableNode:
         """
         eta = self.prior.eta.copy()
         lam = self.prior.lam.copy()
-        for factor in self.adj_factors:
-            eta_message, lam_message = factor.get_message_for(self)
+        for factor_idx in self.adj_factors_idx:
+            factor = self.factor_nodes[factor_idx]
+            eta_message, lam_message = factor.get_message_for(self.idx)
             eta += eta_message
             lam += lam_message
 
         self.belief.eta = eta
         self.belief.lam = lam
-        self.sigma = np.linalg.inv(self.belief.lam)  # Just for debugging/output
-        self.mu = self.sigma @ self.belief.eta  # Just for debugging/output
+        if np.linalg.det(self.belief.lam) != 0:
+            self.sigma = np.linalg.inv(self.belief.lam)  # Just for debugging/output
+            self.mu = self.sigma @ self.belief.eta  # Just for debugging/output
 
         # Send message with updated belief to adjacent factors
-        for factor in self.adj_factors:
-            eta_message, lam_message = factor.get_message_for(self)
+        for factor_idx in self.adj_factors_idx:
+            factor = self.factor_nodes[factor_idx]
+            eta_message, lam_message = factor.get_message_for(self.idx)
             factor.receive_message_from(self.idx, eta - eta_message, lam - lam_message)
 
 
 class FactorNode:
     __doc__ = "Factor node modelling the dependencies between variable nodes as a gaussian distribution."
+    idx_counter = 0
 
     def __init__(self, adj_variable_nodes: List[VariableNode],
                  measurement_fn: Callable[[List[np.ndarray], Any], np.ndarray],
@@ -82,7 +90,9 @@ class FactorNode:
         :param jacobian_fn: the jacobian of the measurement function
         :param args: any additional args for the measurement/jacobian function
         """
-        self.adj_variable_nodes = adj_variable_nodes
+        self.idx = FactorNode.idx_counter
+        FactorNode.idx_counter += 1
+        self.adj_variable_node_idxs = [v.idx for v in adj_variable_nodes]
         self.measurement_fn = measurement_fn
         self.measurement_noise = measurement_noise
         self.measurement = measurement
@@ -90,33 +100,16 @@ class FactorNode:
         self.args = args
         self.adj_variable_messages = {}
         self.messages_to_adj_variables = {}
+        self.linearization_point = []
+        self.variable_nodes = []  # will be set by the FactorGraph at the end
 
         self.number_of_conditional_variables = 0  # just as a sanity check
-        for variable_node in self.adj_variable_nodes:
-            variable_node.adj_factors.append(self)  # bind factor to variable
+        for variable_node in adj_variable_nodes:
+            variable_node.adj_factors_idx.append(self.idx)  # bind factor to variable
             self.number_of_conditional_variables += variable_node.dimensions
-            self.adj_variable_messages[variable_node.idx] = variable_node.belief
+            self.adj_variable_messages[variable_node.idx] = deepcopy(variable_node.belief)
             self.messages_to_adj_variables[variable_node.idx] = GaussianState(variable_node.dimensions)
-
-    def compute_factor(self) -> Tuple[np.ndarray, np.ndarray]:
-        linearization_point = []
-        for belief in self.adj_variable_messages.values():
-            mean = np.linalg.inv(belief.lam) @ belief.eta
-            linearization_point.append(mean)  # Linearize around mean of adj. vars
-        jacobian = self.jacobian_fn(linearization_point, *self.args)
-
-        predicted_measurement = self.measurement_fn(linearization_point, *self.args)
-        if isinstance(self.measurement, float):
-            inverse_measurement_noise = 1 / self.measurement_noise
-            lam = inverse_measurement_noise * np.outer(jacobian, jacobian)
-            eta = inverse_measurement_noise * jacobian.T * (
-                    jacobian @ linearization_point + self.measurement - predicted_measurement)
-        else:
-            inverse_measurement_noise = np.linalg.inv(self.measurement_noise)
-            eta = jacobian.T @ inverse_measurement_noise * (self.measurement - predicted_measurement)
-            lam = jacobian.T @ inverse_measurement_noise @ jacobian
-
-        return eta, lam
+            self.linearization_point.append(np.zeros_like(variable_node.belief.eta))
 
     def receive_message_from(self, variable_idx: int, eta_message: np.ndarray, lam_message: np.ndarray):
         """
@@ -125,17 +118,44 @@ class FactorNode:
         :param eta_message: the eta part of the message
         :param lam_message: the lambda part of the message
         """
-        self.adj_variable_messages[variable_idx].lam = lam_message
-        self.adj_variable_messages[variable_idx].eta = eta_message
+        self.adj_variable_messages[variable_idx].lam = lam_message.copy()
+        self.adj_variable_messages[variable_idx].eta = eta_message.copy()
 
-    def get_message_for(self, variable_node: VariableNode):
+    def get_message_for(self, variable_node_idx: int):
         """
         Simple getter function to retrieve the correct message for a given variable node
-        :param variable_node: message from this factor to variable_node
+        :param variable_node_idx: message from this factor to variable_node
         :return: eta_message and lam_message
         """
-        return self.messages_to_adj_variables[variable_node.idx].eta, self.messages_to_adj_variables[
-            variable_node.idx].lam
+        return self.messages_to_adj_variables[variable_node_idx].eta.copy(), \
+               self.messages_to_adj_variables[variable_node_idx].lam.copy()
+
+    def relinearize(self):
+        linearization_point = []
+        for belief in self.adj_variable_messages.values():
+            if np.linalg.det(belief.lam) != 0:  # if possible relinearize
+                mean = np.linalg.inv(belief.lam) @ belief.eta
+                linearization_point.append(mean)  # Linearize around mean of adj. vars
+            else:
+                return  # keep old lin point
+        self.linearization_point = linearization_point
+
+    def compute_factor(self) -> Tuple[np.ndarray, np.ndarray]:
+        jacobian = self.jacobian_fn(self.linearization_point, *self.args)
+
+        predicted_measurement = self.measurement_fn(self.linearization_point, *self.args)
+        if isinstance(self.measurement, float):
+            inverse_measurement_noise = 1 / self.measurement_noise
+            lam = inverse_measurement_noise * np.outer(jacobian, jacobian)
+            eta = jacobian.T * inverse_measurement_noise * (
+                    self.measurement - (predicted_measurement - jacobian @ np.array(self.linearization_point)))
+        else:
+            inverse_measurement_noise = np.linalg.inv(self.measurement_noise)
+            eta = jacobian.T @ inverse_measurement_noise * (
+                    self.measurement - (predicted_measurement - (jacobian @ np.array(self.linearization_point))))
+            lam = jacobian.T @ inverse_measurement_noise @ jacobian
+
+        return eta, lam
 
     def compute_outgoing_messages(self):
         """
@@ -146,13 +166,15 @@ class FactorNode:
         """
         current_eta_factor, current_lam_factor = self.compute_factor()
         current_variable_position = 0
-        for variable_node in self.adj_variable_nodes:
+        for variable_node_idx in self.adj_variable_node_idxs:
+            variable_node = self.variable_nodes[variable_node_idx]
             eta_factor, lam_factor = current_eta_factor.copy(), current_lam_factor.copy()
 
             # For every node take the product of factor and incoming messages
             current_factor_position = 0
-            for other_variables in self.adj_variable_nodes:
-                if variable_node != other_variables:
+            for other_variable_idx in self.adj_variable_node_idxs:
+                other_variables = self.variable_nodes[other_variable_idx]
+                if variable_node_idx != other_variable_idx:
                     start = current_factor_position
                     end = current_factor_position + other_variables.dimensions
                     eta_factor[start:end] += self.adj_variable_messages[other_variables.idx].eta
@@ -160,7 +182,7 @@ class FactorNode:
                 current_factor_position += other_variables.dimensions
 
             # Marginalization to variable node
-            # - First "reorder" variable_nodes's elements to the top
+            # - First "reorder" variable_nodes's (short a) elements to the top
             cur_dims = variable_node.dimensions
             start = current_variable_position
             end = current_variable_position + cur_dims
@@ -188,6 +210,10 @@ class FactorGraph:
     def __init__(self, variable_nodes: List[VariableNode], factor_nodes: List[FactorNode]):
         self.variable_nodes = variable_nodes
         self.factor_nodes = factor_nodes
+        for v in self.variable_nodes:
+            v.factor_nodes = self.factor_nodes
+        for f in self.factor_nodes:
+            f.variable_nodes = self.variable_nodes
 
     def compute_all_messages(self):
         """
@@ -203,9 +229,14 @@ class FactorGraph:
         for variable_node in self.variable_nodes:
             variable_node.update_belief()
 
+    def relinerize_factors(self):
+        for factor in self.factor_nodes:
+            factor.relinearize()
+
     def synchronous_iteration(self):
         """
         Triggers a single synchronous iteration over all nodes (factor and variable nodes)
         """
         self.compute_all_messages()
         self.update_all_beliefs()
+        self.relinerize_factors()

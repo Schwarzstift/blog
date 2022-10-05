@@ -12,7 +12,7 @@ Please check this site out if you want to have a general introduction.
 Additional resources about Belief Propagation in general can be found in the references \[2,3\].
 The complete code can be found [here](https://github.com/Schwarzstift/blog/tree/gh-pages/src/GaussianBeliefPropagation/internal)
 
-# Gaussian Belief Propagation - An Implementation guide
+# Disclaimer 
 In here I want to focus on the implementational details of the basic algorithm.
 Applications will be described in a second blog post.
 This implementation does NOT focus on performance. 

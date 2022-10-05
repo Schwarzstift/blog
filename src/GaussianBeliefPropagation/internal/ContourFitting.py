@@ -34,13 +34,14 @@ class ContourFittingViz:
         self.ax.scatter(self.x_positions, self.iterations[0])
 
         def animate(t):
+
             self.ax.clear()
             self.ax.set_ylim(0, 1)
             self.ax.set_title("Iteration: " + str(t))
             self.ax.set_xlabel('x')
             self.ax.set_ylabel('Height')
             self.ax.scatter(self.measurements_x, self.measurements_y)
-            self.ax.scatter(self.x_positions, self.iterations[t])
+            self.ax.plot(self.x_positions, self.iterations[t])
 
         ani = FuncAnimation(self.fig, animate, frames=self.num_iterations, repeat=False)
         plt.show()

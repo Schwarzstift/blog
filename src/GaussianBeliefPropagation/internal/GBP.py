@@ -7,7 +7,7 @@ from copy import deepcopy
 class GaussianState:
     __doc__ = "This class holds a possibly multi dimensional state in canonical form"
 
-    def __init__(self, dimensionality: int, eta: np.ndarray = None, lam: np.ndarray = None):
+    def __init__(self, dimensionality: int):
         """
         Initialize a gaussian state
         :param dimensionality: number of dimensions of the state
@@ -15,15 +15,8 @@ class GaussianState:
         :param lam: canonical form of the covariance matrix
         """
         self.dim = dimensionality
-        if eta is not None and len(eta) == self.dim:
-            self.eta = eta
-        else:
-            self.eta = np.zeros(self.dim)
-
-        if lam is not None and lam.shape == (self.dim, self.dim):
-            self.lam = lam
-        else:
-            self.lam = np.zeros([self.dim, self.dim])
+        self.eta = np.zeros(self.dim)
+        self.lam = np.zeros([self.dim, self.dim])
 
 
 class VariableNode:
@@ -103,7 +96,7 @@ class FactorNode:
         self.linearization_point = []
         self.variable_nodes = []  # will be set by the FactorGraph at the end
 
-        self.number_of_conditional_variables = 0  # just as a sanity check
+        self.number_of_conditional_variables = 0
         for variable_node in adj_variable_nodes:
             variable_node.adj_factors_idx.append(self.idx)  # bind factor to variable
             self.number_of_conditional_variables += variable_node.dimensions

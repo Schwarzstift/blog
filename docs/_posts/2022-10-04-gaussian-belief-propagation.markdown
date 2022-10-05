@@ -278,7 +278,7 @@ Here I want to cite the Appendix B from [here](https://gaussianbp.github.io/):
 > $$b_i(x_i)= \prod_{s \in N(i)} m_{f_s \rightarrow x_i}, $$
 > where N(i) denotes the neighbours of nodes i. A Gaussian message has the canonical form: 
 > $$ m = N^{-1}(x,\eta,\Lambda) \propto exp(-\frac{1}{2} x^\intercal \Lambda x+\eta^\intercal x), $$
-> and so taking products of these messages is equivalent to summing the respective information vectors and precision matrices. The belief parameters $\eta_{b_i}$ and $\Lambda_{b_i}$ are therefore:
+> and so taking products of these messages is equivalent to summing the respective information vectors and precision matrices. The belief parameters $$\eta_{b_i}$$ and $$\Lambda_{b_i}$$ are therefore:
 > $$ \eta_{b_i} = \sum_{s \in N(i)} \eta_{f_s \rightarrow x_i} \text{ and }  \Lambda_{b_i} = \sum_{s \in N(i)} \Lambda_{f_s \rightarrow x_i}$$
 $$ N(i) = \text{set of adjacent nodes of i} $$
 
@@ -663,14 +663,14 @@ Here I want to cite the blog post again. This time Appendix B: Factor to variabl
 
 > To send a message from a factor node to a variable node, the factor aggregates messages from all other adjacent variable nodes before marginalising out all other adjacent variable nodes: 
 > $$m_{f_j\rightarrow x_i} = \sum_{X_j \setminus x_i} f_j(X_j) \prod_{k \in N(j)\setminus i} m_{x_k \rightarrow f_j}$$
-> To see how this computation is implemented for Gaussian models with the canonical form, consider a factor $f$ connected to 3 variable nodes\[$x_1,x_2,x_3$\] where we are computing the message to variable $x_1$ The factor $f([x_1,x_2,x_3]) = N^{-1}([x_1,x_2,x_3]; \eta_f, \Lambda_f)$ is a Gaussian over the variables and can be divided up as follows:
+> To see how this computation is implemented for Gaussian models with the canonical form, consider a factor $$f$$ connected to 3 variable nodes\[$$x_1,x_2,x_3$$\] where we are computing the message to variable $$x_1$$ The factor $$f([x_1,x_2,x_3]) = N^{-1}([x_1,x_2,x_3]; \eta_f, \Lambda_f)$$ is a Gaussian over the variables and can be divided up as follows:
 >$$
 \eta_f = \begin{bmatrix} \eta_{f_1} \\ \eta_{f_2} \\ \eta_{f_3} \end{bmatrix} \text{and} \Lambda_f = \begin{bmatrix}  
 \Lambda_{f_{11}} & \Lambda_{f_{12}}& \Lambda_{f_{13}}\\
 \Lambda_{f_{21}} & \Lambda_{f_{22}}& \Lambda_{f_{23}}\\
 \Lambda_{f_{31}} & \Lambda_{f_{32}}& \Lambda_{f_{33}}\end{bmatrix}
 $$
-> The first part of the computation for the message to $x_1$, is to take the product of the factor distribution and messages coming from the other adjacent variables nodes ($x_2$ and $x_3$). This yields a Gaussian with the following parameters:
+> The first part of the computation for the message to $$x_1$$, is to take the product of the factor distribution and messages coming from the other adjacent variables nodes ($$x_2$$ and $$x_3$$). This yields a Gaussian with the following parameters:
 >$$
 \eta_f = \begin{bmatrix} \eta_{f_1} \\ \eta_{f_2}+\eta_{x_2 \rightarrow f} \\ \eta_{f_3}+\eta_{x_3 \rightarrow f} \end{bmatrix} \text{and} \Lambda_f = \begin{bmatrix}  
 \Lambda_{f_{11}} & \Lambda_{f_{12}}& \Lambda_{f_{13}}\\
@@ -686,7 +686,7 @@ $$
 > $$
 \eta_{Ma} = \eta_a - \Lambda_{ab} \Lambda_{bb}^{-1} \eta_b \text{ and } \Lambda_{Ma} = \Lambda_{ab}\Lambda_{bb}^{-1}\Lambda_{ba}
 $$
-> To apply these formula to the partitioned joint Gaussian parameterized by $\eta^\prime_{f}$ and $\Lambda^\prime_{f}$, we first reorder the vector and matrix to bring the output variable to the top (in our example the recipient variable $x_1$ is already at the top, so we do not need to reorder). Then we identify the subblocks $a = x_1$ and $b = [x_2, x_3]$ and apply the above marginalization equations to form the parameters of the outgoing message.
+> To apply these formula to the partitioned joint Gaussian parameterized by $$\eta^\prime_{f}$$ and $$\Lambda^\prime_{f}$$, we first reorder the vector and matrix to bring the output variable to the top (in our example the recipient variable $$x_1$$ is already at the top, so we do not need to reorder). Then we identify the subblocks $$a = x_1$$ and $$b = [x_2, x_3]$$ and apply the above marginalization equations to form the parameters of the outgoing message.
 
 As pointed out, there are two-three steps to compute:
 1. Product of the incoming messages

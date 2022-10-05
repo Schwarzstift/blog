@@ -1,7 +1,7 @@
 ---
 author: Chris Carstensen
 layout: post
-title:  "On filtering class information"
+title:  "Gaussian Belief Propagation - An Implementation guide"
 date:   2022-10-04 18:01:08 +0200
 categories: GBP
 ---

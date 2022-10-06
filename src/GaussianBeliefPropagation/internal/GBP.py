@@ -165,11 +165,6 @@ class FactorNode:
         self.factor_lam = (self.factor_lam + self.factor_lam.T) / 2.
         self.factor_lam += np.identity(self.factor_lam.shape[0]) * 1e-6
 
-        if np.linalg.det(self.factor_lam) == 0:
-            print("This is not correct, is it?")
-
-
-
     def compute_outgoing_messages(self):
         """
         Computes all factor to variable messages for adjacent variable nodes.

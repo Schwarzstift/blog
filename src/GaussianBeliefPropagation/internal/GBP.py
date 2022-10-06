@@ -51,6 +51,10 @@ class VariableNode:
             eta += eta_message
             lam += lam_message
 
+        # Ensure that matrix is positive-semi-definite
+        lam = (lam + lam.T) / 2.
+        lam -= np.identity(lam.shape[0]) * 1e-6
+
         self.belief.eta = eta
         self.belief.lam = lam
         if np.linalg.det(self.belief.lam) != 0:
@@ -132,16 +136,14 @@ class FactorNode:
         Calculates a new mean of adjacent variables, if possible. This used as the new linearization point.
         """
         linearization_point = []
-        update_factor = True
         for belief in self.adj_variable_messages.values():
             if np.linalg.det(belief.lam) != 0:  # if possible relinearize
                 mean = np.linalg.inv(belief.lam) @ belief.eta
                 linearization_point.append(mean)  # Linearize around mean of adj. vars
             else:
-                update_factor = False
-        if update_factor:
-            self.linearization_point = linearization_point
-            self.compute_factor()
+                linearization_point.append(np.array([0.]))
+        self.linearization_point = linearization_point
+        self.compute_factor()
 
     def compute_factor(self):
         """
@@ -151,19 +153,22 @@ class FactorNode:
         jacobian = self.jacobian_fn(self.linearization_point, *self.args)
 
         predicted_measurement = self.measurement_fn(self.linearization_point, *self.args)
-        if isinstance(self.measurement, float):
-            inverse_measurement_noise = 1 / self.measurement_noise
-            lam = inverse_measurement_noise * np.outer(jacobian, jacobian)
-            eta = jacobian.T * inverse_measurement_noise * (
-                    self.measurement - (predicted_measurement - jacobian @ np.array(self.linearization_point)))
-        else:
-            inverse_measurement_noise = np.linalg.inv(self.measurement_noise)
-            eta = jacobian.T @ inverse_measurement_noise * (
-                    self.measurement - (predicted_measurement - (jacobian @ np.array(self.linearization_point))))
-            lam = jacobian.T @ inverse_measurement_noise @ jacobian
 
-        self.factor_eta = eta
-        self.factor_lam = lam
+        inverse_measurement_noise = np.linalg.inv(self.measurement_noise)
+        self.factor_eta = jacobian.T @ inverse_measurement_noise * (
+                self.measurement - (predicted_measurement - (jacobian @ np.array(self.linearization_point).flatten())))
+        self.factor_eta = self.factor_eta.flatten()
+
+        self.factor_lam = jacobian.T @ inverse_measurement_noise @ jacobian
+
+        # Ensure that matrix is positive-semi-definite
+        self.factor_lam = (self.factor_lam + self.factor_lam.T) / 2.
+        self.factor_lam += np.identity(self.factor_lam.shape[0]) * 1e-6
+
+        if np.linalg.det(self.factor_lam) == 0:
+            print("This is not correct, is it?")
+
+
 
     def compute_outgoing_messages(self):
         """
@@ -172,11 +177,10 @@ class FactorNode:
 
         See this blog post Appendix B for the equations: https://gaussianbp.github.io/
         """
-        current_eta_factor, current_lam_factor = self.factor_eta, self.factor_lam
         current_variable_position = 0
         for variable_node_idx in self.adj_variable_node_idxs:
             variable_node = self.variable_nodes[variable_node_idx]
-            eta_factor, lam_factor = current_eta_factor.copy(), current_lam_factor.copy()
+            eta_factor, lam_factor = self.factor_eta.copy(), self.factor_lam.copy()
 
             # For every node take the product of factor and incoming messages
             current_factor_position = 0
@@ -206,8 +210,13 @@ class FactorNode:
             # - Then marginalize according to https://ieeexplore.ieee.org/document/4020357
             new_message_eta = eta_a - lam_ab @ np.linalg.inv(lam_bb) @ eta_b
             new_message_lam = lam_aa - lam_ab @ np.linalg.inv(lam_bb) @ lam_ba
-            self.messages_to_adj_variables[variable_node.idx].eta = new_message_eta
-            self.messages_to_adj_variables[variable_node.idx].lam = new_message_lam
+
+            # Ensure that matrix is positive-semi-definite
+            new_message_lam = (new_message_lam + new_message_lam.T) / 2.
+            new_message_lam += np.identity(new_message_lam.shape[0]) * 1e-6
+
+            self.messages_to_adj_variables[variable_node_idx].eta = new_message_eta
+            self.messages_to_adj_variables[variable_node_idx].lam = new_message_lam
 
             current_variable_position += variable_node.dimensions
 

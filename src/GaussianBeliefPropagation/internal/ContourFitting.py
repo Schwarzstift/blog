@@ -202,10 +202,12 @@ def generate_measurement_step():
     Samples measuremetns from a step function
     :return: measurement (x,y)
     """
-    height_measurement = np.random.random() * 0.
+    height_measurement = np.random.random() * 0.1
     x_pos = np.random.random()
     if x_pos < 0.5:
-        height_measurement += 0.5
+        height_measurement += 0.7
+    else:
+        height_measurement += 0.2
     return x_pos, height_measurement
 
 
@@ -217,15 +219,15 @@ def generate_measurement_rect():
     height_measurement = np.random.random() * 0.05
     x_pos = np.random.random()
     if 0.33 < x_pos < 0.66:
-        height_measurement += 0.5
+        height_measurement += 0.7
+
     return x_pos, height_measurement
 
 
-# ----------------------------------- PUTTING ALL TOGETHER -----------------------------
-if __name__ == "__main__":
-    use_huber = True
+def main():
+    use_huber = False
     num_var = 20
-    num_measurements = 10
+    num_measurements = 12
     noise = 0.01
     meas_noise = np.array([[noise]])
     smooth_noise = np.array([[noise]])
@@ -245,3 +247,8 @@ if __name__ == "__main__":
         viz.add_iteration(variable_nodes)
 
     viz.render()
+
+
+# ----------------------------------- PUTTING ALL TOGETHER -----------------------------
+if __name__ == "__main__":
+    main()

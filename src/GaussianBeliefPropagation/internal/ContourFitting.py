@@ -13,7 +13,7 @@ class ContourFittingViz:
     __doc__ = "Simple class containing all plotting stuff"
 
     def __init__(self, v_nodes: List[VariableNode], measurements: List[np.ndarray], num_iterations):
-        self.fig, (self.ax, self.ax_lam) = plt.subplots(1,2)
+        self.fig, (self.ax, self.ax_lam) = plt.subplots(1, 2)
         self.ax.set_ylim(0, 1)
         self.measurements_x, self.measurements_y = zip(*measurements)
         self.num_iterations = num_iterations
@@ -37,7 +37,8 @@ class ContourFittingViz:
         """
 
         self.ax.scatter(self.measurements_x, self.measurements_y)
-        self.ax.errorbar(self.x_positions, self.iterations[0], yerr=self.iterations_cov[0], fmt="o")
+        self.ax.plot(self.x_positions, self.iterations[0], color="lightcoral")
+        self.ax.errorbar(self.x_positions, self.iterations[0], color="red", yerr=self.iterations_cov[0], fmt="o")
 
         for v_lams in self.iterations_lam.values():
             self.ax_lam.plot(range(len(v_lams)), v_lams)
@@ -49,6 +50,7 @@ class ContourFittingViz:
             self.ax.set_xlabel('x')
             self.ax.set_ylabel('Height')
             self.ax.scatter(self.measurements_x, self.measurements_y)
+            self.ax.plot(self.x_positions, self.iterations[t], color="lightcoral")
             self.ax.errorbar(self.x_positions, self.iterations[t], color="red", yerr=self.iterations_cov[t], fmt="o")
 
         ani = FuncAnimation(self.fig, animate, frames=self.num_iterations + 1, repeat=False)
@@ -106,7 +108,7 @@ def smoothing_jac(linearization_point: List[np.ndarray]) -> np.ndarray:
     return np.array([[1, -1]])
 
 
-def generate_smoothing_factors(v_nodes: List[VariableNode], meas_noise) -> List[FactorNode]:
+def generate_smoothing_factors(v_nodes: List[VariableNode], meas_noise, use_huber: bool) -> List[FactorNode]:
     """
     Generate factor nodes with the above defined smoothing measurement function
     :param v_nodes: all variable nodes
@@ -119,7 +121,7 @@ def generate_smoothing_factors(v_nodes: List[VariableNode], meas_noise) -> List[
         meas_fn = smoothing
         measurement = 0.
         jac_fn = smoothing_jac
-        f_nodes.append(FactorNode(adj_vars, meas_fn, meas_noise, measurement, jac_fn, []))
+        f_nodes.append(FactorNode(adj_vars, meas_fn, meas_noise, measurement, jac_fn, use_huber, []))
     return f_nodes
 
 
@@ -159,7 +161,8 @@ def measurement_fn_jac(means: List[np.ndarray], x_pos_i: float, x_pos_j: float,
 
 
 def generate_measurement_factors(v_nodes: List[VariableNode], measurement_generator,
-                                 num_measurements: int, meas_noise) -> Tuple[List[FactorNode], List[np.ndarray]]:
+                                 num_measurements: int, meas_noise, use_huber: bool) -> Tuple[
+    List[FactorNode], List[np.ndarray]]:
     """
     Generates the measurement factors and measurements (one factor for each measurement)
     :param v_nodes: all variable nodes
@@ -177,7 +180,7 @@ def generate_measurement_factors(v_nodes: List[VariableNode], measurement_genera
         adj_vars = [v_nodes[idx_var_node], v_nodes[idx_var_node + 1]]
         meas_fn = measurement_fn
         jac_fn = measurement_fn_jac
-        f_nodes.append(FactorNode(adj_vars, meas_fn, meas_noise, height_measurement, jac_fn,
+        f_nodes.append(FactorNode(adj_vars, meas_fn, meas_noise, height_measurement, jac_fn, use_huber,
                                   [v_nodes[idx_var_node].x_pos, v_nodes[idx_var_node + 1].x_pos, measurement_x_pos]))
         gen_meas.append(np.array([measurement_x_pos, height_measurement]))
 
@@ -199,9 +202,9 @@ def generate_measurement_step():
     Samples measuremetns from a step function
     :return: measurement (x,y)
     """
-    height_measurement = np.random.random() * 0.1
+    height_measurement = np.random.random() * 0.
     x_pos = np.random.random()
-    if x_pos > 0.5:
+    if x_pos < 0.5:
         height_measurement += 0.5
     return x_pos, height_measurement
 
@@ -220,6 +223,7 @@ def generate_measurement_rect():
 
 # ----------------------------------- PUTTING ALL TOGETHER -----------------------------
 if __name__ == "__main__":
+    use_huber = True
     num_var = 20
     num_measurements = 10
     noise = 0.01
@@ -227,8 +231,8 @@ if __name__ == "__main__":
     smooth_noise = np.array([[noise]])
     variable_nodes = generate_variable_nodes(num_var, 1)
     factor_nodes, measurements = generate_measurement_factors(variable_nodes, generate_measurement_step,
-                                                              num_measurements, meas_noise)
-    factor_nodes.extend(generate_smoothing_factors(variable_nodes, smooth_noise))
+                                                              num_measurements, meas_noise, use_huber)
+    factor_nodes.extend(generate_smoothing_factors(variable_nodes, smooth_noise, use_huber))
 
     factor_graph = FactorGraph(variable_nodes, factor_nodes)
 

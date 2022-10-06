@@ -77,6 +77,7 @@ class FactorNode:
                  measurement_noise: np.ndarray,
                  measurement: Union[np.ndarray, float],
                  jacobian_fn: Callable[[List[np.ndarray], Any], np.ndarray],
+                 huber_energy: bool,
                  args: Any):
         """
         Initialize internal variables & adds itself to all adjacent variable nodes
@@ -92,6 +93,7 @@ class FactorNode:
         self.adj_variable_node_idxs = [v.idx for v in adj_variable_nodes]
         self.measurement_fn = measurement_fn
         self.measurement_noise = measurement_noise
+        self.adaptive_measurement_noise_lam = np.linalg.inv(self.measurement_noise)
         self.measurement = measurement
         self.jacobian_fn = jacobian_fn
         self.args = args
@@ -99,6 +101,8 @@ class FactorNode:
         self.messages_to_adj_variables = {}
         self.linearization_point = []
         self.variable_nodes = []  # will be set by the FactorGraph at the end
+        self.huber_energy = huber_energy
+        self.huber_mahalanobis_threshold = 0.1
 
         self.number_of_conditional_variables = 0
         for variable_node in adj_variable_nodes:
@@ -143,7 +147,28 @@ class FactorNode:
             else:
                 linearization_point.append(np.array([0.]))
         self.linearization_point = linearization_point
+        self.compute_adaptive_noise()
         self.compute_factor()
+
+    def compute_adaptive_noise(self):
+        if self.huber_energy:
+            predicted_measurement = self.measurement_fn(self.linearization_point, *self.args)
+            res = self.measurement - predicted_measurement
+
+            mahalanobis_dist = np.linalg.norm(res) / np.sqrt(self.measurement_noise)
+            if mahalanobis_dist > self.huber_mahalanobis_threshold:
+                # self.adaptive_measurement_noise_lam = 2 * self.huber_mahalanobis_threshold * np.sqrt(
+                #     np.linalg.inv(self.measurement_noise)) / res - np.square(
+                #     self.huber_mahalanobis_threshold) / np.square(res)
+
+                self.adaptive_measurement_noise_lam = np.linalg.inv(
+                    self.measurement_noise * np.square(mahalanobis_dist) / (2 * (
+                            self.huber_mahalanobis_threshold * mahalanobis_dist - 0.5 * np.square(
+                        self.huber_mahalanobis_threshold))))
+            else:
+                self.adaptive_measurement_noise_lam = np.linalg.inv(self.measurement_noise)
+        else:
+            self.adaptive_measurement_noise_lam = np.linalg.inv(self.measurement_noise)
 
     def compute_factor(self):
         """
@@ -151,15 +176,13 @@ class FactorNode:
         Should be called, when the linearization point changes.
         """
         jacobian = self.jacobian_fn(self.linearization_point, *self.args)
-
         predicted_measurement = self.measurement_fn(self.linearization_point, *self.args)
 
-        inverse_measurement_noise = np.linalg.inv(self.measurement_noise)
-        self.factor_eta = jacobian.T @ inverse_measurement_noise * (
+        self.factor_eta = jacobian.T @ self.adaptive_measurement_noise_lam * (
                 self.measurement - (predicted_measurement - (jacobian @ np.array(self.linearization_point).flatten())))
         self.factor_eta = self.factor_eta.flatten()
 
-        self.factor_lam = jacobian.T @ inverse_measurement_noise @ jacobian
+        self.factor_lam = jacobian.T @ self.adaptive_measurement_noise_lam @ jacobian
 
         # Ensure that matrix is positive-semi-definite
         self.factor_lam = (self.factor_lam + self.factor_lam.T) / 2.

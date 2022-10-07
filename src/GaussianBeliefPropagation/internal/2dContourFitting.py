@@ -41,8 +41,8 @@ class ContourPlottingViz:
 
         def animate(t):
             ax.clear()
-            ax.set_xlim(0, 1)
-            ax.set_ylim(0, 1)
+            #ax.set_xlim(0, 1)
+            #ax.set_ylim(0, 1)
             x, y = zip(*self.measurement_list[0])
             ax.scatter(x, y)
 
@@ -59,11 +59,8 @@ class ContourPlottingViz:
 # ---------------------------------- Factor Graph ------------------------------------
 def generate_variable_nodes(num_variable_nodes: int) -> List[VariableNode]:
     variable_nodes = []
-    #i = 0
     for _ in range(num_variable_nodes):
         pos_prior = np.random.random(2)
-        #pos_prior = np.array([i / 2. + 0.2, 0.5])
-        #i+=1
         cov_prior = np.array([[100., 0.], [0., 100.]])
         prior = GaussianState(2)
         prior.set_values(pos_prior, cov_prior)
@@ -78,7 +75,7 @@ def generate_distance_factor_nodes(variable_nodes: List[VariableNode], measureme
         adj_vars = [variable_nodes[i], variable_nodes[i + 1]]
         meas_fn = distance_measurement_factor
         jac_fn = distance_measurement_factor_jac
-        measurement = 0.  # ToDo think about this
+        measurement = 0.
         factor_nodes.append(
             FactorNode(adj_vars, meas_fn, measurement_noise, measurement, jac_fn, use_huber, [target_distance]))
     return factor_nodes
@@ -87,11 +84,11 @@ def generate_distance_factor_nodes(variable_nodes: List[VariableNode], measureme
 def generate_smoothing_factor_nodes(variable_nodes: List[VariableNode], measurement_noise: np.ndarray,
                                     use_huber: bool) -> List[FactorNode]:
     factor_nodes = []
-    for i in range(len(variable_nodes) - 1):
-        adj_vars = [variable_nodes[i], variable_nodes[i + 1]]
+    for i in range(1, len(variable_nodes) - 1):
+        adj_vars = [variable_nodes[i - 1], variable_nodes[i], variable_nodes[i + 1]]
         meas_fn = smoothing_factor
         jac_fn = smoothing_factor_jac
-        measurement = 0.  # ToDo think about this
+        measurement = 0.
         factor_nodes.append(FactorNode(adj_vars, meas_fn, measurement_noise, measurement, jac_fn, use_huber, []))
     return factor_nodes
 
@@ -115,7 +112,7 @@ def generate_prior(num_variable_nodes: int, measurement_noise: np.ndarray, use_h
     variable_nodes = generate_variable_nodes(num_variable_nodes)
     factor_nodes = []
     factor_nodes.extend(generate_distance_factor_nodes(variable_nodes, measurement_noise, use_huber, target_distance))
-    # factor_nodes.extend(generate_smoothing_factor_nodes(variable_nodes, measurement_noise, use_huber))
+    factor_nodes.extend(generate_smoothing_factor_nodes(variable_nodes, measurement_noise, use_huber))
     # factor_nodes.extend(generate_measurement_factor_nodes(variable_nodes, measurement_noise, use_huber, measurements))
 
     return FactorGraph(variable_nodes, factor_nodes)
@@ -147,7 +144,7 @@ def main():
     num_variable_nodes = 10
     measurement_noise = np.array([[0.01]])
     use_huber = False
-    target_distance = 0.2
+    target_distance = 0.1
 
     viz = ContourPlottingViz(num_frames)
     measurements = generate_measurements(num_measurements_range)

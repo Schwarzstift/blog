@@ -18,20 +18,41 @@ class GaussianState:
         self.eta = np.zeros(self.dim)
         self.lam = np.zeros([self.dim, self.dim])
 
+    def set_values(self, mu: np.ndarray, sigma: np.ndarray):
+        """
+        Sets and converts values from moment form to canonical form
+        :param mu: mean
+        :param sigma: covariance
+        """
+        self.lam = np.linalg.inv(sigma)
+        self.eta = mu @ self.lam
+
+    def get_values(self):
+        """
+        Return values in moment form
+        :return: mean, cov
+        """
+        return np.linalg.inv(self.lam) @ self.eta, np.linalg.inv(self.lam)
+
 
 class VariableNode:
     __doc__ = "Represents a gaussian distributed multi dimensional random variable in a factor graph."
     idx_counter = 0
 
-    def __init__(self, dimensions: int):
+    def __init__(self, dimensions: int, prior: GaussianState = None):
         """
         Initialize the belief and prior with gaussian states
         :param dimensions: the dimensions of the gaussian state
+        :param prior: a prior of the variable
         """
         self.idx = VariableNode.idx_counter
         VariableNode.idx_counter += 1
-        self.belief = GaussianState(dimensions)
-        self.prior = GaussianState(dimensions)
+        if prior is None:
+            self.belief = GaussianState(dimensions)
+            self.prior = GaussianState(dimensions)
+        else:
+            self.belief = deepcopy(prior)
+            self.prior = deepcopy(prior)
         self.dimensions = dimensions
         self.adj_factors_idx = []  # will be filled by Factors on creation
         self.factor_nodes = []  # will be filled at the end by the FactorGraph
@@ -114,6 +135,7 @@ class FactorNode:
 
         self.factor_eta = None
         self.factor_lam = None
+        self.relinearize()
         self.compute_factor()
 
     def receive_message_from(self, variable_idx: int, eta_message: np.ndarray, lam_message: np.ndarray):
@@ -286,4 +308,6 @@ class FactorGraph:
         """
         Calls synchronous iteration until a convergenz criteria is met or
         """
-        pass # ToDo implement me
+        for _ in range(1):
+            self.synchronous_iteration()
+        # ToDo implement me correctly

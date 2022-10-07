@@ -151,6 +151,9 @@ class FactorNode:
         self.compute_factor()
 
     def compute_adaptive_noise(self):
+        """
+        Computes the adaptive measurement noise if enabled
+        """
         if self.huber_energy:
             predicted_measurement = self.measurement_fn(self.linearization_point, *self.args)
             res = self.measurement - predicted_measurement
@@ -278,3 +281,9 @@ class FactorGraph:
         self.relinearize_factors()
         self.compute_all_messages()
         self.update_all_beliefs()
+
+    def fit(self):
+        """
+        Calls synchronous iteration until a convergenz criteria is met or
+        """
+        pass # ToDo implement me

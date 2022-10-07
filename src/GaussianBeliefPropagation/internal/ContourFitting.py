@@ -1,10 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation, FFMpegWriter
-from typing import List
-import math
-from GBP import *
+from matplotlib.animation import FuncAnimation
 
+from GBP import *
 np.random.seed(44)
 
 

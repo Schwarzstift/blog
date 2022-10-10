@@ -15,10 +15,10 @@ class GaussianState:
         :param lam: canonical form of the covariance matrix
         """
         self.dim = dimensionality
-        self.eta = np.zeros(self.dim)
+        self.eta = np.matrix(np.zeros(self.dim))
         self.lam = np.zeros([self.dim, self.dim])
 
-    def set_values(self, mu: np.ndarray, sigma: np.ndarray):
+    def set_values(self, mu: np.matrix, sigma: np.matrix):
         """
         Sets and converts values from moment form to canonical form
         :param mu: mean
@@ -32,7 +32,7 @@ class GaussianState:
         Return values in moment form
         :return: mean, cov
         """
-        return np.linalg.inv(self.lam) @ self.eta, np.linalg.inv(self.lam)
+        return np.linalg.inv(self.lam) @ self.eta.T, np.linalg.inv(self.lam)
 
 
 class VariableNode:
@@ -80,7 +80,7 @@ class VariableNode:
         self.belief.lam = lam
         if np.linalg.det(self.belief.lam) != 0:
             self.sigma = np.linalg.inv(self.belief.lam)  # Just for debugging/output
-            self.mu = self.sigma @ self.belief.eta  # Just for debugging/output
+            self.mu = self.sigma @ self.belief.eta.T  # Just for debugging/output
 
         # Send message with updated belief to adjacent factors
         for factor_idx in self.adj_factors_idx:
@@ -94,10 +94,10 @@ class FactorNode:
     idx_counter = 0
 
     def __init__(self, adj_variable_nodes: List[VariableNode],
-                 measurement_fn: Callable[[List[np.ndarray], Any], np.ndarray],
-                 measurement_noise: np.ndarray,
-                 measurement: Union[np.ndarray, float],
-                 jacobian_fn: Callable[[List[np.ndarray], Any], np.ndarray],
+                 measurement_fn: Callable[[List[np.matrix], Any], np.matrix],
+                 measurement_noise: np.matrix,
+                 measurement: Union[np.matrix, float],
+                 jacobian_fn: Callable[[List[np.matrix], Any], np.matrix],
                  huber_energy: bool,
                  args: Any):
         """
@@ -138,7 +138,7 @@ class FactorNode:
         self.relinearize()
         self.compute_factor()
 
-    def receive_message_from(self, variable_idx: int, eta_message: np.ndarray, lam_message: np.ndarray):
+    def receive_message_from(self, variable_idx: int, eta_message: np.matrix, lam_message: np.matrix):
         """
         Stores the new variable to factor message for the next iteration
         :param variable_idx: the idx of the variable where the message originated from
@@ -164,7 +164,7 @@ class FactorNode:
         linearization_point = []
         for belief in self.adj_variable_messages.values():
             if np.linalg.det(belief.lam) != 0:  # if possible relinearize
-                mean = np.linalg.inv(belief.lam) @ belief.eta
+                mean = belief.eta @ np.linalg.inv(belief.lam)
                 linearization_point.append(mean)  # Linearize around mean of adj. vars
             else:
                 linearization_point.append(np.array([0.]))
@@ -182,10 +182,6 @@ class FactorNode:
 
             mahalanobis_dist = np.linalg.norm(res) / np.sqrt(self.measurement_noise)
             if mahalanobis_dist > self.huber_mahalanobis_threshold:
-                # self.adaptive_measurement_noise_lam = 2 * self.huber_mahalanobis_threshold * np.sqrt(
-                #     np.linalg.inv(self.measurement_noise)) / res - np.square(
-                #     self.huber_mahalanobis_threshold) / np.square(res)
-
                 self.adaptive_measurement_noise_lam = np.linalg.inv(
                     self.measurement_noise * np.square(mahalanobis_dist) / (2 * (
                             self.huber_mahalanobis_threshold * mahalanobis_dist - 0.5 * np.square(
@@ -232,7 +228,7 @@ class FactorNode:
                 if variable_node_idx != other_variable_idx:
                     start = current_factor_position
                     end = current_factor_position + other_variables.dimensions
-                    eta_factor[start:end] += self.adj_variable_messages[other_variables.idx].eta
+                    eta_factor[:, start:end] += self.adj_variable_messages[other_variables.idx].eta
                     lam_factor[start:end, start:end] += self.adj_variable_messages[other_variables.idx].lam
                 current_factor_position += other_variables.dimensions
 
@@ -241,8 +237,8 @@ class FactorNode:
             cur_dims = variable_node.dimensions
             start = current_variable_position
             end = current_variable_position + cur_dims
-            eta_a = eta_factor[start:end]  # information vector of variable_node
-            eta_b = np.concatenate((eta_factor[:start], eta_factor[end:]))  # information vector of the rest
+            eta_a = eta_factor[:, start:end]  # information vector of variable_node
+            eta_b = np.block([eta_factor[:, :start], eta_factor[:, end:]])  # information vector of the rest
 
             lam_aa = lam_factor[start:end, start:end]
             lam_ab = np.hstack((lam_factor[start:end, :start], lam_factor[start:end, end:]))
@@ -251,7 +247,7 @@ class FactorNode:
                                [lam_factor[end:, :start], lam_factor[end:, end:]]])
 
             # - Then marginalize according to https://ieeexplore.ieee.org/document/4020357
-            new_message_eta = eta_a - lam_ab @ np.linalg.inv(lam_bb) @ eta_b
+            new_message_eta = eta_a - (lam_ab @ np.linalg.inv(lam_bb) @ eta_b.T).T
             new_message_lam = lam_aa - lam_ab @ np.linalg.inv(lam_bb) @ lam_ba
 
             # Ensure that matrix is positive-semi-definite

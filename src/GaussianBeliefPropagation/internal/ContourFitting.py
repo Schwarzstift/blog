@@ -65,9 +65,9 @@ class ContourFittingViz:
         iterations_cov = []
 
         for v in v_nodes:
-            y_positions.append(v.mu[0])
-            iterations_cov.append(v.sigma[0][0])
-            self.iterations_lam[v.idx].append(v.belief.lam[0][0])
+            y_positions.append(np.asscalar(v.mu))
+            iterations_cov.append(np.asscalar(v.sigma))
+            self.iterations_lam[v.idx].append(np.asscalar(v.belief.lam))
 
         self.iterations.append(y_positions)
         self.iterations_cov.append(iterations_cov)
@@ -95,7 +95,7 @@ def smoothing(means: List[np.ndarray]) -> np.ndarray:
     Simple smoothing function, forcing the nodes to hold similar height values
     :param means: height estimates for each adjacent nodes (to the factor
     """
-    return means[0] - means[1]
+    return np.matrix(means[0] - means[1])
 
 
 def smoothing_jac(linearization_point: List[np.ndarray]) -> np.ndarray:
@@ -103,7 +103,7 @@ def smoothing_jac(linearization_point: List[np.ndarray]) -> np.ndarray:
     Jacobian of the smoothing function
     :param linearization_point: point of evaluation (not used as linear)
     """
-    return np.array([[1, -1]])
+    return np.matrix([[1, -1]])
 
 
 def generate_smoothing_factors(v_nodes: List[VariableNode], meas_noise, use_huber: bool) -> List[FactorNode]:
@@ -138,7 +138,7 @@ def measurement_fn(means: List[np.ndarray], x_pos_i: float, x_pos_j: float, x_po
     y_i = means[0]
     y_j = means[1]
     lam = (x_m - x_i) / (x_j - x_i)
-    return (1 - lam) * y_i + lam * y_j
+    return np.matrix((1 - lam) * y_i + lam * y_j)
 
 
 def measurement_fn_jac(means: List[np.ndarray], x_pos_i: float, x_pos_j: float,
@@ -155,7 +155,7 @@ def measurement_fn_jac(means: List[np.ndarray], x_pos_i: float, x_pos_j: float,
     x_i = x_pos_i
     x_j = x_pos_j
     gamma = (x_m - x_i) / (x_j - x_i)
-    return np.array([[(1 - gamma), gamma]])
+    return np.matrix([[(1 - gamma), gamma]])
 
 
 def generate_measurement_factors(v_nodes: List[VariableNode], measurement_generator,

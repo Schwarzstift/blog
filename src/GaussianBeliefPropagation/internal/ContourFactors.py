@@ -24,33 +24,39 @@ def smoothing_factor(means: List[np.matrix]) -> np.matrix:
     a, b, c = means
     b_a = b - a
     c_a = c - a
-    return -np.matrix(np.linalg.norm(np.dot(b_a, c_a.T) / np.dot(c_a, c_a.T) * c_a + a - b))
+    center = a + c_a / (np.linalg.norm(c_a) * 0.5)
+
+    #projection = np.dot(b_a, c_a.T) / np.dot(c_a, c_a.T) * c_a + a
+    distance = np.matrix(np.linalg.norm(center - b))
+    return distance
 
 
 def smoothing_factor_jac(means: List[np.matrix]) -> np.matrix:
-    # wolfram alpha : jacobian of (||(b-a).(c-a)^T/((c-a).(c-a)^T)*(c-a)-b+a||)
+    # wolfram alpha : jacobian of (||(b-a).(c-a)^T/((c-a).(c-a)^T)*(c-a)+a-b||)
 
     a, b, c = means
     c_a = c - a
     b_a = b - a
-    c_a_2 = np.dot(c_a, c_a.T)
     one = np.ones_like(c_a)
 
-    fac = np.linalg.norm(c_a * np.asscalar((np.dot(b_a, c_a.T)) / c_a_2) + a - b)
+    projection = np.dot(b_a, c_a.T) / np.dot(c_a, c_a.T) * c_a + a
+    direction = np.sign(projection - b)
 
-    a_derivative = (c_a * -np.asscalar((np.dot(b_a, c_a.T) * (np.dot(c_a, -c_a.T) + np.dot(-one, c_a.T))) / (
-        np.square(np.dot(c_a, c_a.T)))) + c_a * np.asscalar(
-        (np.dot(b_a, -c_a.T) + np.dot(-one, c_a.T)) / (np.dot(c_a, c_a.T))) - (
-                            np.dot(b_a, c_a.T) / (np.dot(c_a, c_a.T))) + one) * fac
+    # a_derivative = c_a * -np.asscalar((np.dot(b_a, c_a.T) * (np.dot(c_a, -c_a.T) + np.dot(-one, c_a.T))) / (
+    #     np.square(np.dot(c_a, c_a.T)))) + c_a * np.asscalar(
+    #     (np.dot(b_a, -c_a.T) + np.dot(-one, c_a.T)) / (np.dot(c_a, c_a.T))) - (
+    #                         np.dot(b_a, c_a.T) / (np.dot(c_a, c_a.T))) + one
 
-    b_derivative = (c_a * np.asscalar((np.dot(one, c_a.T)) / (np.dot(c_a, c_a.T))) - one) * fac
+    b_derivative = (c_a * np.asscalar((np.dot(one, c_a.T)) / (np.dot(c_a, c_a.T)))) - one
 
-    c_derivative = (c_a * -np.asscalar(
-        (np.dot(b_a, c_a.T) * (np.dot(c_a, c_a.T) + np.dot(one, c_a.T)) / (
-            np.square(np.dot(c_a, c_a.T))))) + c_a * np.asscalar(np.dot(b_a, c_a.T) / np.dot(c_a, c_a.T)) + (
-                        np.dot(b_a, c_a.T)) / (np.dot(c_a, c_a.T))) * fac
+    # c_derivative = (c_a * -np.asscalar(
+    #     (np.dot(b_a, c_a.T) * (np.dot(c_a, c_a.T) + np.dot(one, c_a.T)) / (
+    #         np.square(np.dot(c_a, c_a.T))))) + c_a * np.asscalar(np.dot(b_a, c_a.T) / np.dot(c_a, c_a.T)) + (
+    #                     np.dot(b_a, c_a.T)) / (np.dot(c_a, c_a.T)))
     # ToDo Debug me
-    return np.matrix(np.resize(np.array([a_derivative, b_derivative, c_derivative]), (1, a.size * 3)))
+    return np.matrix(np.resize(
+        np.array([np.zeros_like(b_derivative), np.multiply(b_derivative, direction), np.zeros_like(b_derivative)]),
+        (1, a.size * 3)))
 
 
 # -------------------------------------------------------------------------------

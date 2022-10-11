@@ -41,8 +41,8 @@ class ContourPlottingViz:
 
         def animate(t):
             ax.clear()
-            ax.set_xlim(0, 1)
-            ax.set_ylim(0, 1)
+            #ax.set_xlim(0, 1)
+            #ax.set_ylim(0, 1)
             x, y = zip(*self.measurement_list[0])
             ax.scatter(x, y)
 
@@ -60,11 +60,11 @@ class ContourPlottingViz:
 def generate_variable_nodes(num_variable_nodes: int) -> List[VariableNode]:
     variable_nodes = []
     for i in range(num_variable_nodes):
-        # pos_prior = np.random.random(2)
+        #pos_prior = np.random.random(2)
         cov_prior = np.matrix([[100., 0.], [0., 100.]])
-        pos_prior = np.matrix([0.1+i / 3., 0.5])
+        pos_prior = np.matrix([-i, 0.2])
         if i == 1:
-            pos_prior = np.matrix([0.1+i / 3., 0.7])
+            pos_prior = np.matrix([i, -1])
         prior = GaussianState(2)
         prior.set_values(pos_prior, cov_prior)
         variable_nodes.append(VariableNode(2, prior))

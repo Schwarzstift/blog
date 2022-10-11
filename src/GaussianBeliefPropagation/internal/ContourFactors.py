@@ -24,39 +24,22 @@ def smoothing_factor(means: List[np.matrix]) -> np.matrix:
     a, b, c = means
     b_a = b - a
     c_a = c - a
-    center = a + c_a / (np.linalg.norm(c_a) * 0.5)
-
-    #projection = np.dot(b_a, c_a.T) / np.dot(c_a, c_a.T) * c_a + a
-    distance = np.matrix(np.linalg.norm(center - b))
-    return distance
+    center = a + c_a * 0.5
+    distance = np.linalg.norm(center - b)
+    return np.matrix(distance)
 
 
 def smoothing_factor_jac(means: List[np.matrix]) -> np.matrix:
-    # wolfram alpha : jacobian of (||(b-a).(c-a)^T/((c-a).(c-a)^T)*(c-a)+a-b||)
-
+    # wolfram alpha : jacobian of (||a+(c-a)*0.5-b||)
     a, b, c = means
     c_a = c - a
-    b_a = b - a
-    one = np.ones_like(c_a)
 
-    projection = np.dot(b_a, c_a.T) / np.dot(c_a, c_a.T) * c_a + a
-    direction = np.sign(projection - b)
-
-    # a_derivative = c_a * -np.asscalar((np.dot(b_a, c_a.T) * (np.dot(c_a, -c_a.T) + np.dot(-one, c_a.T))) / (
-    #     np.square(np.dot(c_a, c_a.T)))) + c_a * np.asscalar(
-    #     (np.dot(b_a, -c_a.T) + np.dot(-one, c_a.T)) / (np.dot(c_a, c_a.T))) - (
-    #                         np.dot(b_a, c_a.T) / (np.dot(c_a, c_a.T))) + one
-
-    b_derivative = (c_a * np.asscalar((np.dot(one, c_a.T)) / (np.dot(c_a, c_a.T)))) - one
-
-    # c_derivative = (c_a * -np.asscalar(
-    #     (np.dot(b_a, c_a.T) * (np.dot(c_a, c_a.T) + np.dot(one, c_a.T)) / (
-    #         np.square(np.dot(c_a, c_a.T))))) + c_a * np.asscalar(np.dot(b_a, c_a.T) / np.dot(c_a, c_a.T)) + (
-    #                     np.dot(b_a, c_a.T)) / (np.dot(c_a, c_a.T)))
-    # ToDo Debug me
-    return np.matrix(np.resize(
-        np.array([np.zeros_like(b_derivative), np.multiply(b_derivative, direction), np.zeros_like(b_derivative)]),
-        (1, a.size * 3)))
+    direction_vector = a + c_a * 0.5 - b
+    unit_direction_vector = direction_vector / np.linalg.norm(direction_vector)
+    a_derivative = unit_direction_vector * 0.5
+    b_derivative = unit_direction_vector * -1
+    c_derivative = unit_direction_vector * 0.5
+    return np.matrix(np.resize(np.array([np.zeros_like(a_derivative), b_derivative, np.zeros_like(c_derivative)]), (1, a.size * 3)))
 
 
 # -------------------------------------------------------------------------------

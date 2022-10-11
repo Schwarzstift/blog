@@ -60,11 +60,11 @@ class ContourPlottingViz:
 def generate_variable_nodes(num_variable_nodes: int) -> List[VariableNode]:
     variable_nodes = []
     for i in range(num_variable_nodes):
-        #pos_prior = np.random.random(2)
+        pos_prior = np.random.random(2)
         cov_prior = np.matrix([[100., 0.], [0., 100.]])
-        pos_prior = np.matrix([-i, 0.2])
-        if i == 1:
-            pos_prior = np.matrix([i, -1])
+        #pos_prior = np.matrix([-i, 1])
+        #if i == 1:
+        #    pos_prior = np.matrix([-i, 2])
         prior = GaussianState(2)
         prior.set_values(pos_prior, cov_prior)
         variable_nodes.append(VariableNode(2, prior))
@@ -116,7 +116,7 @@ def generate_prior(num_variable_nodes: int, measurement_noise: np.matrix, use_hu
     factor_nodes = []
     #factor_nodes.extend(generate_distance_factor_nodes(variable_nodes, measurement_noise, use_huber, target_distance))
     factor_nodes.extend(generate_smoothing_factor_nodes(variable_nodes, measurement_noise, use_huber))
-    # factor_nodes.extend(generate_measurement_factor_nodes(variable_nodes, measurement_noise, use_huber, measurements))
+    factor_nodes.extend(generate_measurement_factor_nodes(variable_nodes, measurement_noise, use_huber, measurements))
 
     return FactorGraph(variable_nodes, factor_nodes)
 
@@ -143,9 +143,9 @@ def generate_measurements(num_range: List[int]) -> List[np.matrix]:
 
 def main():
     num_measurements_range = [10, 15]
-    num_frames = 1
-    num_variable_nodes = 3
-    measurement_noise = np.matrix([0.00001])
+    num_frames = 100
+    num_variable_nodes = 4
+    measurement_noise = np.matrix([0.001])
     use_huber = False
     target_distance = 0.1
 

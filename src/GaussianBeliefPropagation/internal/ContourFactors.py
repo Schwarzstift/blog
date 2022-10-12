@@ -22,7 +22,6 @@ def distance_measurement_factor_jac(means: List[np.matrix], target_distance) -> 
 def smoothing_factor(means: List[np.matrix]) -> np.matrix:
     # distance point to line
     a, b, c = means
-    b_a = b - a
     c_a = c - a
     center = a + c_a * 0.5
     distance = np.linalg.norm(center - b)
@@ -39,14 +38,52 @@ def smoothing_factor_jac(means: List[np.matrix]) -> np.matrix:
     a_derivative = unit_direction_vector * 0.5
     b_derivative = unit_direction_vector * -1
     c_derivative = unit_direction_vector * 0.5
-    return np.matrix(np.resize(np.array([np.zeros_like(a_derivative), b_derivative, np.zeros_like(c_derivative)]), (1, a.size * 3)))
+    return np.matrix(
+        np.resize(np.array([np.zeros_like(a_derivative), b_derivative, np.zeros_like(c_derivative)]), (1, a.size * 3)))
 
 
 # -------------------------------------------------------------------------------
 
-def measurement_factor(means: List[np.matrix]) -> np.matrix:
-    pass
+def measurement_factor(means: List[np.matrix], measurement_point) -> np.matrix:
+    distances2 = []
+    distances = []
+    sum_inv_dist = 0
+    for p in means:
+        dist = np.linalg.norm(measurement_point - p)
+        distances2.append(dist * dist)
+        distances.append(dist)
+        sum_inv_dist += 1. / dist
+    measurement = 0
+    for i in range(len(means)):
+        mean = means[i]
+        dist = distances[i]
+        dist2 = distances2[i]
+        c = sum_inv_dist - 1 / dist
+        w = np.linalg.norm((measurement_point - mean) / (dist2 * c + dist))
+        measurement += dist * w
+    return np.matrix(measurement)
 
 
-def measurement_factor_jac(means: List[np.matrix]) -> np.matrix:
-    pass
+def measurement_factor_jac(means: List[np.matrix], measurement_point) -> np.matrix:
+    distances2 = []
+    distances = []
+    sum_inv_dist = 0
+    for p in means:
+        dist = np.linalg.norm(measurement_point - p)
+        distances2.append(dist * dist)
+        distances.append(dist)
+        sum_inv_dist += 1. / dist
+    direction_vectors = []
+    for p, i in zip(means, range(len(means))):
+        mean = means[i]
+        dist = distances[i]
+        dist2 = distances2[i]
+        c = sum_inv_dist - 1 / dist
+        w = np.linalg.norm((measurement_point - mean) / (dist2 * c + dist))
+
+        direction = (measurement_point - p)
+
+        fac = - (2 + 3 * c * dist) / (dist + 2 * c * dist * dist + c * c * dist * dist * dist)
+        direction *= (w/dist + fac)
+        direction_vectors.append(direction.flatten())
+    return np.vstack(direction_vectors).flatten()

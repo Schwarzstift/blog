@@ -17,7 +17,7 @@ class ContourPlottingViz:
         self.posterior_state_cov_list = []
 
     def save_measurements(self, measurements: List[np.matrix]):
-        self.measurement_list.append([ np.asarray(m).flatten() for m in measurements])
+        self.measurement_list.append([np.asarray(m).flatten() for m in measurements])
 
     def save_state(self, factor_graph: FactorGraph):
         prior_mus = []
@@ -49,7 +49,7 @@ class ContourPlottingViz:
             x, y = zip(*self.prior_state_mu_list[0])
             ax.plot(x, y, marker="x", color="red")
             x, y = zip(*self.posterior_state_mu_list[t])
-            ax.plot(x, y, marker="x", color="yellow")
+            ax.plot(x, y, marker="x", color="purple")
 
         ani = FuncAnimation(fig, animate, frames=self.num_frames, repeat=False)
 
@@ -60,11 +60,9 @@ class ContourPlottingViz:
 def generate_variable_nodes(num_variable_nodes: int) -> List[VariableNode]:
     variable_nodes = []
     for i in range(num_variable_nodes):
-        pos_prior = np.random.random(2)
+        # pos_prior = np.random.random(2)
         cov_prior = np.matrix([[100., 0.], [0., 100.]])
-        #pos_prior = np.matrix([-i, 1])
-        #if i == 1:
-        #    pos_prior = np.matrix([-i, 2])
+        pos_prior = np.matrix([(i + 1) / (num_variable_nodes + 1), 0.5+ np.random.random()*0.1])
         prior = GaussianState(2)
         prior.set_values(pos_prior, cov_prior)
         variable_nodes.append(VariableNode(2, prior))
@@ -99,12 +97,13 @@ def generate_smoothing_factor_nodes(variable_nodes: List[VariableNode], measurem
 def generate_measurement_factor_nodes(variable_nodes: List[VariableNode], measurement_noise: np.matrix,
                                       use_huber: bool, measurements: List[np.matrix]) -> List[FactorNode]:
     factor_nodes = []
-    for i in range(len(measurements)):
-        adj_vars = []  # ToDo implement me
+    for m in measurements:
+        adj_vars = variable_nodes  # ToDo maybe implement gating
         meas_fn = measurement_factor
         jac_fn = measurement_factor_jac
-        measurement = 0.  # ToDo fill_me
-        factor_nodes.append(FactorNode(adj_vars, meas_fn, measurement_noise, measurement, jac_fn, use_huber, []))
+        measurement = 0.
+        factor_nodes.append(
+            FactorNode(adj_vars, meas_fn, measurement_noise, measurement, jac_fn, use_huber, [m]))
     return factor_nodes
 
 
@@ -115,7 +114,7 @@ def generate_prior(num_variable_nodes: int, measurement_noise: np.matrix, use_hu
     variable_nodes = generate_variable_nodes(num_variable_nodes)
     factor_nodes = []
     #factor_nodes.extend(generate_distance_factor_nodes(variable_nodes, measurement_noise, use_huber, target_distance))
-    factor_nodes.extend(generate_smoothing_factor_nodes(variable_nodes, measurement_noise, use_huber))
+    #factor_nodes.extend(generate_smoothing_factor_nodes(variable_nodes, measurement_noise, use_huber))
     factor_nodes.extend(generate_measurement_factor_nodes(variable_nodes, measurement_noise, use_huber, measurements))
 
     return FactorGraph(variable_nodes, factor_nodes)
@@ -142,12 +141,12 @@ def generate_measurements(num_range: List[int]) -> List[np.matrix]:
 
 
 def main():
-    num_measurements_range = [10, 15]
-    num_frames = 100
-    num_variable_nodes = 4
-    measurement_noise = np.matrix([0.001])
+    num_measurements_range = [2, 3]
+    num_frames = 1000
+    num_variable_nodes = 2
+    measurement_noise = np.matrix([0.02])
     use_huber = False
-    target_distance = 0.1
+    target_distance = 0.3
 
     viz = ContourPlottingViz(num_frames)
     measurements = generate_measurements(num_measurements_range)

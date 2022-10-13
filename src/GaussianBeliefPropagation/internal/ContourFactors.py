@@ -1,6 +1,8 @@
 import numpy as np
 from typing import List
 
+from numpy import ndarray
+
 
 def distance_measurement_factor(means: List[np.matrix], target_distance) -> np.matrix:
     a = means[0]
@@ -45,45 +47,34 @@ def smoothing_factor_jac(means: List[np.matrix]) -> np.matrix:
 # -------------------------------------------------------------------------------
 
 def measurement_factor(means: List[np.matrix], measurement_point) -> np.matrix:
-    distances2 = []
     distances = []
     sum_inv_dist = 0
     for p in means:
-        dist = np.linalg.norm(measurement_point - p)
-        distances2.append(dist * dist)
+        dist = np.linalg.norm(measurement_point - p)**3
         distances.append(dist)
         sum_inv_dist += 1. / dist
-    measurement = 0
+    measurement = []
     for i in range(len(means)):
         mean = means[i]
         dist = distances[i]
-        dist2 = distances2[i]
-        c = sum_inv_dist - 1 / dist
-        w = np.linalg.norm((measurement_point - mean) / (dist2 * c + dist))
-        measurement += dist * w
-    return np.matrix(measurement)
+        direction = measurement_point - mean
+
+        measurement.append(direction * (1 / (dist * sum_inv_dist)))
+    return -np.matrix(np.array(measurement)).flatten()
 
 
-def measurement_factor_jac(means: List[np.matrix], measurement_point) -> np.matrix:
-    distances2 = []
+def measurement_factor_jac(means: List[np.matrix], measurement_point) -> ndarray:
     distances = []
-    sum_inv_dist = 0
+    sum_dist = 0
     for p in means:
         dist = np.linalg.norm(measurement_point - p)
-        distances2.append(dist * dist)
         distances.append(dist)
-        sum_inv_dist += 1. / dist
+        sum_dist += dist
     direction_vectors = []
     for p, i in zip(means, range(len(means))):
-        mean = means[i]
-        dist = distances[i]
-        dist2 = distances2[i]
-        c = sum_inv_dist - 1 / dist
-        w = np.linalg.norm((measurement_point - mean) / (dist2 * c + dist))
+        d = distances[i]
 
-        direction = (measurement_point - p)
+        direction = -1 + d / sum_dist - d * d * (sum_dist / d + 1) / (sum_dist * sum_dist)
+        direction_vectors.append(-direction)
 
-        fac = - (2 + 3 * c * dist) / (dist + 2 * c * dist * dist + c * c * dist * dist * dist)
-        direction *= (w/dist + fac)
-        direction_vectors.append(direction.flatten())
-    return np.vstack(direction_vectors).flatten()
+    return np.identity(len(means) * 2)

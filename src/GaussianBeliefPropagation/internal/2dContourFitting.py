@@ -41,8 +41,9 @@ class ContourPlottingViz:
 
         def animate(t):
             ax.clear()
-            #ax.set_xlim(0, 1)
-            #ax.set_ylim(0, 1)
+            ax.set_title("Iterations: "+ str(t))
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
             x, y = zip(*self.measurement_list[0])
             ax.scatter(x, y)
 
@@ -60,9 +61,10 @@ class ContourPlottingViz:
 def generate_variable_nodes(num_variable_nodes: int) -> List[VariableNode]:
     variable_nodes = []
     for i in range(num_variable_nodes):
-        # pos_prior = np.random.random(2)
         cov_prior = np.matrix([[100., 0.], [0., 100.]])
-        pos_prior = np.matrix([(i + 1) / (num_variable_nodes + 1), 0.5+ np.random.random()*0.1])
+        # pos_prior = np.random.random(2)
+        pos_prior = np.matrix([(i + 1) / (num_variable_nodes + 1) - 0.1, 0.5 + np.random.random() * 0.1])
+        # pos_prior = np.matrix([0.5, 0.6])
         prior = GaussianState(2)
         prior.set_values(pos_prior, cov_prior)
         variable_nodes.append(VariableNode(2, prior))
@@ -113,8 +115,8 @@ def generate_prior(num_variable_nodes: int, measurement_noise: np.matrix, use_hu
                    measurements: List[np.matrix], target_distance) -> FactorGraph:
     variable_nodes = generate_variable_nodes(num_variable_nodes)
     factor_nodes = []
-    #factor_nodes.extend(generate_distance_factor_nodes(variable_nodes, measurement_noise, use_huber, target_distance))
-    #factor_nodes.extend(generate_smoothing_factor_nodes(variable_nodes, measurement_noise, use_huber))
+    # factor_nodes.extend(generate_distance_factor_nodes(variable_nodes, np.matrix(0.0002), use_huber, target_distance))
+    factor_nodes.extend(generate_smoothing_factor_nodes(variable_nodes, np.matrix(0.0002), use_huber))
     factor_nodes.extend(generate_measurement_factor_nodes(variable_nodes, measurement_noise, use_huber, measurements))
 
     return FactorGraph(variable_nodes, factor_nodes)
@@ -135,18 +137,30 @@ def sample_from_line(num_measurements: int) -> List[np.matrix]:
     return measurements
 
 
+def sample_from_step(num_measurements: int) -> List[np.matrix]:
+    measurements = []
+    for i in range(num_measurements):
+        x, y = np.random.random(2)
+        y = y * 0.05 + 0.1
+        if x > 0.5:
+            y += 0.5
+
+        measurements.append(np.matrix([x, y]))
+    return measurements
+
+
 def generate_measurements(num_range: List[int]) -> List[np.matrix]:
     num_measurements = np.random.randint(*num_range)
-    return sample_from_line(num_measurements)
+    return sample_from_step(num_measurements)
 
 
 def main():
-    num_measurements_range = [2, 3]
-    num_frames = 1000
-    num_variable_nodes = 2
-    measurement_noise = np.matrix([0.02])
+    num_measurements_range = [30, 40]
+    num_frames = 10
+    num_variable_nodes = 10
+    measurement_noise = np.identity(num_variable_nodes * 2) * 0.0002
     use_huber = False
-    target_distance = 0.3
+    target_distance = 0.5
 
     viz = ContourPlottingViz(num_frames)
     measurements = generate_measurements(num_measurements_range)
@@ -154,10 +168,11 @@ def main():
 
     factor_graph = generate_prior(num_variable_nodes, measurement_noise, use_huber, measurements, target_distance)
 
-    for _ in range(num_frames):
+    for i in range(num_frames):
+        print("Iteration: " + str(i))
         factor_graph.fit()
         viz.save_state(factor_graph)
-    #
+
     #     measurements = generate_measurements(num_measurements_range)
     #     viz.save_measurements(measurements)
     #     factor_graph = update_factor_graph(measurements, factor_graph)

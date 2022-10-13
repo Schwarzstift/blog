@@ -74,7 +74,7 @@ class VariableNode:
 
         # Ensure that matrix is positive-semi-definite
         lam = (lam + lam.T) / 2.
-        lam -= np.identity(lam.shape[0]) * 1e-6
+        lam += np.identity(lam.shape[0]) * 1e-6
 
         self.belief.eta = eta
         self.belief.lam = lam
@@ -199,8 +199,9 @@ class FactorNode:
         jacobian = self.jacobian_fn(self.linearization_point, *self.args)
         predicted_measurement = self.measurement_fn(self.linearization_point, *self.args)
 
-        self.factor_eta = np.multiply(jacobian.T @ self.adaptive_measurement_noise_lam, (
-                self.measurement - (predicted_measurement - (jacobian @ np.array(self.linearization_point).flatten()))))
+        self.factor_eta = jacobian.T @ self.adaptive_measurement_noise_lam @ (
+                self.measurement - (
+                predicted_measurement.T - (jacobian @ np.matrix(np.array(self.linearization_point).flatten()).T)))
         self.factor_eta = self.factor_eta.flatten()
 
         self.factor_lam = jacobian.T @ self.adaptive_measurement_noise_lam @ jacobian
@@ -302,8 +303,13 @@ class FactorGraph:
 
     def fit(self):
         """
-        Calls synchronous iteration until a convergenz criteria is met or
+        Calls synchronous iteration until a convergence criteria is met or
         """
-        for _ in range(1):
+        for i in range(50):
+            prior_means = np.array([v.belief.get_values()[0] for v in self.variable_nodes]).flatten()
             self.synchronous_iteration()
-        # ToDo implement me correctly
+            posterior_means = np.array([v.belief.get_values()[0] for v in self.variable_nodes]).flatten()
+            diff = np.linalg.norm(prior_means - posterior_means)
+            print("Iter:" + str(i) + "  diff: " + str(diff))
+            if diff < 0.001:
+                break

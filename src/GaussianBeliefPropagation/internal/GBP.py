@@ -60,6 +60,18 @@ class VariableNode:
         self.mu = np.zeros(dimensions)  # for debug/output purpose
         self.sigma = np.zeros([dimensions, dimensions])  # for debug/output purpose
 
+    def reset(self):
+        """
+        Sets current belief as prior and resets everything else
+        """
+        self.sigma += np.identity(self.belief.lam.shape[0]) * 0.2
+
+        self.belief.lam = np.linalg.inv(self.sigma)
+        self.belief.eta = (self.belief.lam @ self.mu).T
+        self.prior = deepcopy(self.belief)
+        self.adj_factors_idx = []
+        self.factor_nodes = []
+
     def update_belief(self):
         """
         Updates the belief of a variable node & sends a message to all adjacent factors
@@ -305,7 +317,7 @@ class FactorGraph:
         """
         Calls synchronous iteration until a convergence criteria is met or
         """
-        for i in range(50):
+        for i in range(1):
             prior_means = np.array([v.belief.get_values()[0] for v in self.variable_nodes]).flatten()
             self.synchronous_iteration()
             posterior_means = np.array([v.belief.get_values()[0] for v in self.variable_nodes]).flatten()

@@ -3,8 +3,38 @@ import matplotlib.pyplot as plt
 from GBP import *
 from ContourFactors import *
 from matplotlib.animation import FuncAnimation
+from matplotlib.patches import Ellipse
+import matplotlib.transforms as transforms
 
 np.random.seed(42)
+
+
+def confidence_ellipse(center, cov, ax, n_std=3.0, facecolor='none', **kwargs):
+    pearson = cov[0, 1] / np.sqrt(cov[0, 0] * cov[1, 1])
+    # Using a special case to obtain the eigenvalues of this
+    # two-dimensional dataset.
+    ell_radius_x = np.sqrt(1 + pearson)
+    ell_radius_y = np.sqrt(1 - pearson)
+    ellipse = Ellipse((0, 0), width=ell_radius_x * 2, height=ell_radius_y * 2,
+                      facecolor=facecolor, **kwargs)
+
+    # Calculating the standard deviation of x from
+    # the squareroot of the variance and multiplying
+    # with the given number of standard deviations.
+    scale_x = np.sqrt(cov[0, 0]) * n_std
+    mean_x = center[0]
+
+    # calculating the standard deviation of y ...
+    scale_y = np.sqrt(cov[1, 1]) * n_std
+    mean_y = center[1]
+
+    transf = transforms.Affine2D() \
+        .rotate_deg(45) \
+        .scale(scale_x, scale_y) \
+        .translate(mean_x, mean_y)
+
+    ellipse.set_transform(transf + ax.transData)
+    return ax.add_patch(ellipse)
 
 
 class ContourPlottingViz:
@@ -41,16 +71,23 @@ class ContourPlottingViz:
 
         def animate(t):
             ax.clear()
-            ax.set_title("Iterations: "+ str(t))
+            ax.set_title("Iterations: " + str(t))
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
-            x, y = zip(*self.measurement_list[0])
+            x, y = zip(*self.measurement_list[t])
             ax.scatter(x, y)
 
-            x, y = zip(*self.prior_state_mu_list[0])
+            x, y = zip(*self.prior_state_mu_list[t])
             ax.plot(x, y, marker="x", color="red")
+
+            for mean, cov in zip(self.prior_state_mu_list[t], self.prior_state_cov_list[t]):
+                confidence_ellipse(mean, cov, ax, 1., edgecolor="red", linestyle=':')
+
             x, y = zip(*self.posterior_state_mu_list[t])
             ax.plot(x, y, marker="x", color="purple")
+
+            for mean, cov in zip(self.posterior_state_mu_list[t], self.posterior_state_cov_list[t]):
+                confidence_ellipse(mean, cov, ax, 1., edgecolor="purple", linestyle=':')
 
         ani = FuncAnimation(fig, animate, frames=self.num_frames, repeat=False)
 
@@ -110,22 +147,36 @@ def generate_measurement_factor_nodes(variable_nodes: List[VariableNode], measur
 
 
 # ------------------------------ Putting all together --------------------------------
-
-def generate_prior(num_variable_nodes: int, measurement_noise: np.matrix, use_huber: bool,
-                   measurements: List[np.matrix], target_distance) -> FactorGraph:
-    variable_nodes = generate_variable_nodes(num_variable_nodes)
+def generate_factors(variable_nodes, use_huber, measurements, target_distance):
     factor_nodes = []
     # factor_nodes.extend(generate_distance_factor_nodes(variable_nodes, np.matrix(0.0002), use_huber, target_distance))
     factor_nodes.extend(generate_smoothing_factor_nodes(variable_nodes, np.matrix(0.0002), use_huber))
-    factor_nodes.extend(generate_measurement_factor_nodes(variable_nodes, measurement_noise, use_huber, measurements))
+    factor_nodes.extend(
+        generate_measurement_factor_nodes(variable_nodes, np.identity(len(variable_nodes) * 2) * 0.0002, use_huber,
+                                          measurements))
+    return factor_nodes
 
+
+def generate_prior(num_variable_nodes: int, use_huber: bool,
+                   measurements: List[np.matrix], target_distance) -> FactorGraph:
+    variable_nodes = generate_variable_nodes(num_variable_nodes)
+    factor_nodes = generate_factors(variable_nodes, use_huber, measurements, target_distance)
     return FactorGraph(variable_nodes, factor_nodes)
 
 
-def update_factor_graph(new_measurements: List[np.matrix], factor_graph: FactorGraph) -> FactorGraph:
-    # ToDo set state as prior
+def reset_variable_nodes(factor_graph: FactorGraph):
+    for v in factor_graph.variable_nodes:
+        v.reset()
+
+
+def update_factor_graph(new_measurements: List[np.matrix], use_huber, measurements, target_distance,
+                        factor_graph: FactorGraph) -> FactorGraph:
+    reset_variable_nodes(factor_graph)
+    FactorNode.idx_counter = 0
+    factor_nodes = generate_factors(factor_graph.variable_nodes, use_huber, measurements, target_distance)
+
     # ToDO grow/shrink as needed
-    return factor_graph
+    return FactorGraph(factor_graph.variable_nodes, factor_nodes)
 
 
 def sample_from_line(num_measurements: int) -> List[np.matrix]:
@@ -149,16 +200,27 @@ def sample_from_step(num_measurements: int) -> List[np.matrix]:
     return measurements
 
 
+def sample_from_circle(num_measurements: int) -> List[np.matrix]:
+    measurements = []
+    for i in range(num_measurements):
+        a = np.random.random(1) * 2 * np.pi
+        r = 0.3
+        rot_mat = np.matrix(np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]))
+        center = np.matrix([0.5, 0.5])
+        dir = np.matrix([1, 1]) @ rot_mat * r
+        measurements.append(center + dir)
+    return measurements
+
+
 def generate_measurements(num_range: List[int]) -> List[np.matrix]:
     num_measurements = np.random.randint(*num_range)
-    return sample_from_step(num_measurements)
+    return sample_from_circle(num_measurements)
 
 
 def main():
     num_measurements_range = [30, 40]
-    num_frames = 10
+    num_frames = 500
     num_variable_nodes = 10
-    measurement_noise = np.identity(num_variable_nodes * 2) * 0.0002
     use_huber = False
     target_distance = 0.5
 
@@ -166,16 +228,16 @@ def main():
     measurements = generate_measurements(num_measurements_range)
     viz.save_measurements(measurements)
 
-    factor_graph = generate_prior(num_variable_nodes, measurement_noise, use_huber, measurements, target_distance)
+    factor_graph = generate_prior(num_variable_nodes, use_huber, measurements, target_distance)
 
     for i in range(num_frames):
         print("Iteration: " + str(i))
         factor_graph.fit()
         viz.save_state(factor_graph)
 
-    #     measurements = generate_measurements(num_measurements_range)
-    #     viz.save_measurements(measurements)
-    #     factor_graph = update_factor_graph(measurements, factor_graph)
+        # measurements = generate_measurements(num_measurements_range)
+        viz.save_measurements(measurements)
+        factor_graph = update_factor_graph(measurements, use_huber, measurements, target_distance, factor_graph)
     viz.render()
 
 

@@ -38,8 +38,7 @@ def confidence_ellipse(center, cov, ax, n_std=3.0, facecolor='none', **kwargs):
 
 
 class ContourPlottingViz:
-    def __init__(self, num_frames):
-        self.num_frames = num_frames
+    def __init__(self):
         self.measurement_list = []
         self.prior_state_mu_list = []
         self.prior_state_cov_list = []
@@ -74,7 +73,7 @@ class ContourPlottingViz:
             ax.set_title("Iterations: " + str(t))
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
-            x, y = zip(*self.measurement_list[t])
+            x, y = zip(*self.measurement_list[0])
             ax.scatter(x, y)
 
             x, y = zip(*self.prior_state_mu_list[t])
@@ -89,7 +88,7 @@ class ContourPlottingViz:
             for mean, cov in zip(self.posterior_state_mu_list[t], self.posterior_state_cov_list[t]):
                 confidence_ellipse(mean, cov, ax, 1., edgecolor="purple", linestyle=':')
 
-        ani = FuncAnimation(fig, animate, frames=self.num_frames, repeat=False)
+        ani = FuncAnimation(fig, animate, frames=len(self.prior_state_mu_list), repeat=False)
         FFwriter = FFMpegWriter(fps=10)
         ani.save('animation.mp4', writer=FFwriter)
         plt.show()
@@ -102,7 +101,7 @@ def generate_variable_nodes(num_variable_nodes: int) -> List[VariableNode]:
         cov_prior = np.matrix([[1000., 0.], [0., 1000.]])
         # pos_prior = np.random.random(2)
 
-        a = (i / num_variable_nodes) * np.pi*1.5
+        a = (i / num_variable_nodes) * np.pi * 1.5
         r = 0.1
         rot_mat = np.matrix(np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]))
         center = np.matrix([0.5, 0.5])
@@ -173,16 +172,40 @@ def generate_prior(num_variable_nodes: int, use_huber: bool,
     return FactorGraph(variable_nodes, factor_nodes)
 
 
-def reset_variable_nodes(factor_graph: FactorGraph):
-    for v in factor_graph.variable_nodes:
+def reset_variable_nodes(variable_nodes: List[VariableNode]):
+    for v in variable_nodes:
         v.reset(np.identity(v.belief.lam.shape[0]) * 0.05)
+
+
+def give_birth(variable_nodes: List[VariableNode]):
+    birth_distance = 0.1
+    i = 0
+    while i < len(variable_nodes) - 1:
+        v_i = variable_nodes[i]
+        v_j = variable_nodes[i + 1]
+        if np.linalg.norm(v_i.mu - v_j.mu) > birth_distance:
+            new_mu = (v_i.mu + 0.5 * (v_j.mu - v_i.mu))
+            new_sigma = (v_i.sigma + v_j.sigma) / 2.
+            prior = GaussianState(v_i.dimensions)
+            prior.set_values(new_mu.T, new_sigma)
+            new_node = VariableNode(v_j.dimensions, prior)
+            new_node.mu = new_mu
+            new_node.sigma = new_sigma
+            variable_nodes.insert(i + 1, new_node)
+            # continue
+        i += 1
+    # reset index
+    for idx, v in zip(range(len(variable_nodes)), variable_nodes):
+        v.idx = idx
 
 
 def update_factor_graph(new_measurements: List[np.matrix], use_huber, target_distance,
                         factor_graph: FactorGraph) -> FactorGraph:
-    reset_variable_nodes(factor_graph)
+    variable_nodes = factor_graph.variable_nodes
+    reset_variable_nodes(variable_nodes)
+    give_birth(variable_nodes)
     FactorNode.idx_counter = 0
-    factor_nodes = generate_factors(factor_graph.variable_nodes, use_huber, new_measurements, target_distance)
+    factor_nodes = generate_factors(variable_nodes, use_huber, new_measurements, target_distance)
 
     # ToDO grow/shrink as needed
     return FactorGraph(factor_graph.variable_nodes, factor_nodes)
@@ -243,22 +266,30 @@ def generate_measurements(num_range: List[int]) -> List[np.matrix]:
 
 def main():
     num_measurements_range = [30, 40]
-    num_frames = 10
-    num_variable_nodes = 7
+    num_frames = 4
+    num_variable_nodes = 2
     use_huber = False
     target_distance = 0.5
 
-    viz = ContourPlottingViz(num_frames)
+    viz = ContourPlottingViz()
     measurements = generate_measurements(num_measurements_range)
     viz.save_measurements(measurements)
 
     factor_graph = generate_prior(num_variable_nodes, use_huber, measurements, target_distance)
 
     for i in range(num_frames):
-        print("Iteration: " + str(i))
-        factor_graph.fit()
-        viz.save_state(factor_graph)
-
+        print("New Measurement: " + str(i))
+        total_iterations = 0
+        while True:
+            iterations = factor_graph.fit()
+            print(iterations)
+            total_iterations += iterations
+            if iterations == 0:
+                break
+            viz.save_state(factor_graph)
+            viz.save_measurements(measurements)
+            factor_graph = update_factor_graph(measurements, use_huber, target_distance, factor_graph)
+        print("Iterations: " + str(total_iterations))
         measurements = generate_measurements(num_measurements_range)
         viz.save_measurements(measurements)
         factor_graph = update_factor_graph(measurements, use_huber, target_distance, factor_graph)

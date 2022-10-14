@@ -25,7 +25,7 @@ class GaussianState:
         :param sigma: covariance
         """
         self.lam = np.linalg.inv(sigma)
-        self.eta = mu @ self.lam
+        self.eta = mu@self.lam
 
     def get_values(self):
         """
@@ -317,11 +317,12 @@ class FactorGraph:
         """
         Calls synchronous iteration until a convergence criteria is met or
         """
+        i=0
         for i in range(1000):
             prior_means = np.array([v.belief.get_values()[0] for v in self.variable_nodes]).flatten()
             self.synchronous_iteration()
             posterior_means = np.array([v.belief.get_values()[0] for v in self.variable_nodes]).flatten()
             diff = np.linalg.norm(prior_means - posterior_means)
-            print("Iter:" + str(i) + "  diff: " + str(diff))
             if diff < 0.001:
                 break
+        return i

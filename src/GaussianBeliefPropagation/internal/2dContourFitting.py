@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from GBP import *
 from ContourFactors import *
-from matplotlib.animation import FuncAnimation
+from matplotlib.animation import FuncAnimation, FFMpegWriter
 from matplotlib.patches import Ellipse
 import matplotlib.transforms as transforms
 
@@ -19,7 +19,7 @@ def confidence_ellipse(center, cov, ax, n_std=3.0, facecolor='none', **kwargs):
                       facecolor=facecolor, **kwargs)
 
     # Calculating the standard deviation of x from
-    # the squareroot of the variance and multiplying
+    # the square-root of the variance and multiplying
     # with the given number of standard deviations.
     scale_x = np.sqrt(cov[0, 0]) * n_std
     mean_x = center[0]
@@ -90,7 +90,8 @@ class ContourPlottingViz:
                 confidence_ellipse(mean, cov, ax, 1., edgecolor="purple", linestyle=':')
 
         ani = FuncAnimation(fig, animate, frames=self.num_frames, repeat=False)
-
+        FFwriter = FFMpegWriter(fps=10)
+        ani.save('animation.mp4', writer=FFwriter)
         plt.show()
 
 
@@ -98,9 +99,17 @@ class ContourPlottingViz:
 def generate_variable_nodes(num_variable_nodes: int) -> List[VariableNode]:
     variable_nodes = []
     for i in range(num_variable_nodes):
-        cov_prior = np.matrix([[100., 0.], [0., 100.]])
+        cov_prior = np.matrix([[1000., 0.], [0., 1000.]])
         # pos_prior = np.random.random(2)
-        pos_prior = np.matrix([(i + 1) / (num_variable_nodes + 1) - 0.1, 0.5 + np.random.random() * 0.1])
+
+        a = (i / num_variable_nodes) * np.pi*1.5
+        r = 0.1
+        rot_mat = np.matrix(np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]))
+        center = np.matrix([0.5, 0.5])
+        dir = np.matrix([1, 1]) @ rot_mat * r
+        pos_prior = np.matrix(center + dir)
+
+        # pos_prior = np.matrix([(i + 1) / (num_variable_nodes + 1) - 0.1, 0.5 + np.random.random() * 0.1])
         # pos_prior = np.matrix([0.5, 0.6])
         prior = GaussianState(2)
         prior.set_values(pos_prior, cov_prior)
@@ -150,9 +159,9 @@ def generate_measurement_factor_nodes(variable_nodes: List[VariableNode], measur
 def generate_factors(variable_nodes, use_huber, measurements, target_distance):
     factor_nodes = []
     # factor_nodes.extend(generate_distance_factor_nodes(variable_nodes, np.matrix(0.0002), use_huber, target_distance))
-    factor_nodes.extend(generate_smoothing_factor_nodes(variable_nodes, np.matrix(0.0002), use_huber))
+    factor_nodes.extend(generate_smoothing_factor_nodes(variable_nodes, np.matrix(0.01), use_huber))
     factor_nodes.extend(
-        generate_measurement_factor_nodes(variable_nodes, np.identity(len(variable_nodes) * 2) * 0.0002, use_huber,
+        generate_measurement_factor_nodes(variable_nodes, np.identity(len(variable_nodes) * 2) * 0.02, use_huber,
                                           measurements))
     return factor_nodes
 
@@ -166,14 +175,14 @@ def generate_prior(num_variable_nodes: int, use_huber: bool,
 
 def reset_variable_nodes(factor_graph: FactorGraph):
     for v in factor_graph.variable_nodes:
-        v.reset()
+        v.reset(np.identity(v.belief.lam.shape[0]) * 0.05)
 
 
-def update_factor_graph(new_measurements: List[np.matrix], use_huber, measurements, target_distance,
+def update_factor_graph(new_measurements: List[np.matrix], use_huber, target_distance,
                         factor_graph: FactorGraph) -> FactorGraph:
     reset_variable_nodes(factor_graph)
     FactorNode.idx_counter = 0
-    factor_nodes = generate_factors(factor_graph.variable_nodes, use_huber, measurements, target_distance)
+    factor_nodes = generate_factors(factor_graph.variable_nodes, use_huber, new_measurements, target_distance)
 
     # ToDO grow/shrink as needed
     return FactorGraph(factor_graph.variable_nodes, factor_nodes)
@@ -203,7 +212,7 @@ def sample_from_step(num_measurements: int) -> List[np.matrix]:
 def sample_from_circle(num_measurements: int) -> List[np.matrix]:
     measurements = []
     for i in range(num_measurements):
-        a = np.random.random(1) * 2 * np.pi
+        a = np.random.random(1) * np.pi + 0.5
         r = 0.3
         rot_mat = np.matrix(np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]))
         center = np.matrix([0.5, 0.5])
@@ -212,15 +221,30 @@ def sample_from_circle(num_measurements: int) -> List[np.matrix]:
     return measurements
 
 
+def sample_from_rect(num_measurements: int) -> List[np.matrix]:
+    measurements = []
+    for i in range(num_measurements):
+        front_side = np.random.random() < 0.5
+        dist = np.random.random()
+        support_vect = np.array([0.1, 0.1])
+        support_vect += support_vect * np.random.random() * 0.05
+        dir_vect = np.array([0., 1.])
+        if front_side:
+            dir_vect = np.array([1., 0.])
+
+        measurements.append(support_vect + (dir_vect * dist * 0.5))
+    return measurements
+
+
 def generate_measurements(num_range: List[int]) -> List[np.matrix]:
     num_measurements = np.random.randint(*num_range)
-    return sample_from_circle(num_measurements)
+    return sample_from_rect(num_measurements)
 
 
 def main():
     num_measurements_range = [30, 40]
-    num_frames = 500
-    num_variable_nodes = 10
+    num_frames = 10
+    num_variable_nodes = 7
     use_huber = False
     target_distance = 0.5
 
@@ -235,9 +259,9 @@ def main():
         factor_graph.fit()
         viz.save_state(factor_graph)
 
-        # measurements = generate_measurements(num_measurements_range)
+        measurements = generate_measurements(num_measurements_range)
         viz.save_measurements(measurements)
-        factor_graph = update_factor_graph(measurements, use_huber, measurements, target_distance, factor_graph)
+        factor_graph = update_factor_graph(measurements, use_huber, target_distance, factor_graph)
     viz.render()
 
 

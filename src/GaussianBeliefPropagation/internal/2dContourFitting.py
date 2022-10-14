@@ -73,7 +73,7 @@ class ContourPlottingViz:
             ax.set_title("Iterations: " + str(t))
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
-            x, y = zip(*self.measurement_list[0])
+            x, y = zip(*self.measurement_list[t])
             ax.scatter(x, y)
 
             x, y = zip(*self.prior_state_mu_list[t])
@@ -158,9 +158,9 @@ def generate_measurement_factor_nodes(variable_nodes: List[VariableNode], measur
 def generate_factors(variable_nodes, use_huber, measurements, target_distance):
     factor_nodes = []
     # factor_nodes.extend(generate_distance_factor_nodes(variable_nodes, np.matrix(0.0002), use_huber, target_distance))
-    factor_nodes.extend(generate_smoothing_factor_nodes(variable_nodes, np.matrix(0.01), use_huber))
+    factor_nodes.extend(generate_smoothing_factor_nodes(variable_nodes, np.matrix(0.07), use_huber))
     factor_nodes.extend(
-        generate_measurement_factor_nodes(variable_nodes, np.identity(len(variable_nodes) * 2) * 0.02, use_huber,
+        generate_measurement_factor_nodes(variable_nodes, np.identity(len(variable_nodes) * 2) * 0.1, use_huber,
                                           measurements))
     return factor_nodes
 
@@ -174,11 +174,12 @@ def generate_prior(num_variable_nodes: int, use_huber: bool,
 
 def reset_variable_nodes(variable_nodes: List[VariableNode]):
     for v in variable_nodes:
-        v.reset(np.identity(v.belief.lam.shape[0]) * 0.05)
+        v.reset(np.identity(v.belief.lam.shape[0]) * 0.01)
 
 
-def give_birth(variable_nodes: List[VariableNode]):
-    birth_distance = 0.1
+def add_new_nodes(variable_nodes: List[VariableNode]):
+    num_birth_components = 0
+    birth_distance = 0.15
     i = 0
     while i < len(variable_nodes) - 1:
         v_i = variable_nodes[i]
@@ -186,28 +187,48 @@ def give_birth(variable_nodes: List[VariableNode]):
         if np.linalg.norm(v_i.mu - v_j.mu) > birth_distance:
             new_mu = (v_i.mu + 0.5 * (v_j.mu - v_i.mu))
             new_sigma = (v_i.sigma + v_j.sigma) / 2.
-            prior = GaussianState(v_i.dimensions)
-            prior.set_values(new_mu.T, new_sigma)
-            new_node = VariableNode(v_j.dimensions, prior)
+            belief = GaussianState(v_i.dimensions)
+            belief.set_values(new_mu.T, new_sigma)
+            new_node = VariableNode(v_j.dimensions, belief)
             new_node.mu = new_mu
             new_node.sigma = new_sigma
+
+            new_lam = (v_i.prior.lam + v_j.prior.lam) / 2.
+            new_eta = (v_i.prior.eta + v_j.prior.eta) * 0.5
+            prior = GaussianState(v_i.dimensions)
+            prior.lam = new_lam
+            prior.eta = new_eta
+
+            new_node.prior = prior
             variable_nodes.insert(i + 1, new_node)
+            num_birth_components += 1
             # continue
         i += 1
-    # reset index
+    # reset nodes
     for idx, v in zip(range(len(variable_nodes)), variable_nodes):
+        v.adj_factors_idx = []
+        v.factor_nodes = []
         v.idx = idx
+    return num_birth_components
+
+
+def give_birth(measurements, use_huber, target_distance, factor_graph) -> (FactorGraph, int):
+    FactorNode.idx_counter = 0
+    num_birth_components = add_new_nodes(factor_graph.variable_nodes)
+    factor_nodes = generate_factors(factor_graph.variable_nodes, use_huber, measurements, target_distance)
+
+    # ToDO shrink as needed
+    return FactorGraph(factor_graph.variable_nodes, factor_nodes), num_birth_components
 
 
 def update_factor_graph(new_measurements: List[np.matrix], use_huber, target_distance,
-                        factor_graph: FactorGraph) -> FactorGraph:
+                        factor_graph: FactorGraph) -> (FactorGraph):
     variable_nodes = factor_graph.variable_nodes
     reset_variable_nodes(variable_nodes)
-    give_birth(variable_nodes)
     FactorNode.idx_counter = 0
     factor_nodes = generate_factors(variable_nodes, use_huber, new_measurements, target_distance)
 
-    # ToDO grow/shrink as needed
+    # ToDO shrink as needed
     return FactorGraph(factor_graph.variable_nodes, factor_nodes)
 
 
@@ -266,7 +287,7 @@ def generate_measurements(num_range: List[int]) -> List[np.matrix]:
 
 def main():
     num_measurements_range = [30, 40]
-    num_frames = 4
+    num_frames = 10
     num_variable_nodes = 2
     use_huber = False
     target_distance = 0.5
@@ -280,16 +301,17 @@ def main():
     for i in range(num_frames):
         print("New Measurement: " + str(i))
         total_iterations = 0
-        while True:
+        num_new_components = True
+        while num_new_components != 0:
             iterations = factor_graph.fit()
-            print(iterations)
             total_iterations += iterations
-            if iterations == 0:
-                break
             viz.save_state(factor_graph)
             viz.save_measurements(measurements)
-            factor_graph = update_factor_graph(measurements, use_huber, target_distance, factor_graph)
-        print("Iterations: " + str(total_iterations))
+            factor_graph, num_new_components = give_birth(measurements, use_huber, target_distance,
+                                                          factor_graph)
+            print("Iterations: " + str(iterations) + " added components: " + str(num_new_components))
+
+        print("Total iterations: " + str(total_iterations))
         measurements = generate_measurements(num_measurements_range)
         viz.save_measurements(measurements)
         factor_graph = update_factor_graph(measurements, use_huber, target_distance, factor_graph)

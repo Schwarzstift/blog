@@ -180,30 +180,52 @@ def reset_variable_nodes(variable_nodes: List[VariableNode]):
 def add_new_nodes(variable_nodes: List[VariableNode]):
     num_birth_components = 0
     birth_distance = 0.15
-    i = 0
-    while i < len(variable_nodes) - 1:
-        v_i = variable_nodes[i]
-        v_j = variable_nodes[i + 1]
-        if np.linalg.norm(v_i.mu - v_j.mu) > birth_distance:
-            new_mu = (v_i.mu + 0.5 * (v_j.mu - v_i.mu))
-            new_sigma = (v_i.sigma + v_j.sigma) / 2.
-            belief = GaussianState(v_i.dimensions)
-            belief.set_values(new_mu.T, new_sigma)
-            new_node = VariableNode(v_j.dimensions, belief)
-            new_node.mu = new_mu
-            new_node.sigma = new_sigma
+    if len(variable_nodes) == 1:
+        old = variable_nodes[0]
+        post_mean, post_sigma = old.belief.get_values()
+        prior_mean, _ = old.prior.get_values()
+        vec_prior_post = post_mean - prior_mean
+        vec_orto = np.matrix(np.array([[vec_prior_post[1], -vec_prior_post[0]]]))
+        vec_orto = vec_orto / np.linalg.norm(vec_orto)
+        vec_orto *= post_sigma[0, 0]
+        variable_nodes.clear()
+        for i in range(2):
+            new = GaussianState(2)
+            new_mu = old.mu + vec_orto.T
+            new.set_values(new_mu.T, old.sigma)
+            vec_orto *= -1
+            new_var = VariableNode(2, new)
+            new_var.mu = new_mu
+            new_var.sigma = old.sigma
+            new_var.prior = deepcopy(old.prior)
+            variable_nodes.append(new_var)
+        num_birth_components = 1
+    else:
+        i = 0
+        while i < len(variable_nodes) - 1:
+            v_i = variable_nodes[i]
+            v_j = variable_nodes[i + 1]
+            if np.linalg.norm(v_i.mu - v_j.mu) > birth_distance:
+                new_mu = (v_i.mu + 0.5 * (v_j.mu - v_i.mu))
+                new_sigma = (v_i.sigma + v_j.sigma) / 2.
+                belief = GaussianState(v_i.dimensions)
+                belief.set_values(new_mu.T, new_sigma)
+                new_node = VariableNode(v_j.dimensions, belief)
+                new_node.mu = new_mu
+                new_node.sigma = new_sigma
 
-            new_lam = (v_i.prior.lam + v_j.prior.lam) / 2.
-            new_eta = (v_i.prior.eta + v_j.prior.eta) * 0.5
-            prior = GaussianState(v_i.dimensions)
-            prior.lam = new_lam
-            prior.eta = new_eta
+                new_lam = (v_i.prior.lam + v_j.prior.lam) / 2.
+                new_eta = (v_i.prior.eta + v_j.prior.eta) * 0.5
+                prior = GaussianState(v_i.dimensions)
+                prior.lam = new_lam
+                prior.eta = new_eta
 
-            new_node.prior = prior
-            variable_nodes.insert(i + 1, new_node)
-            num_birth_components += 1
-            # continue
-        i += 1
+                new_node.prior = prior
+                variable_nodes.insert(i + 1, new_node)
+                num_birth_components += 1
+                i += 1
+
+            i += 1
     # reset nodes
     for idx, v in zip(range(len(variable_nodes)), variable_nodes):
         v.adj_factors_idx = []
@@ -271,7 +293,7 @@ def sample_from_rect(num_measurements: int) -> List[np.matrix]:
         front_side = np.random.random() < 0.5
         dist = np.random.random()
         support_vect = np.array([0.1, 0.1])
-        support_vect += support_vect * np.random.random() * 0.05
+        support_vect += support_vect * np.random.random() * 0.4
         dir_vect = np.array([0., 1.])
         if front_side:
             dir_vect = np.array([1., 0.])
@@ -280,15 +302,27 @@ def sample_from_rect(num_measurements: int) -> List[np.matrix]:
     return measurements
 
 
+def sample_from_gaussian(num_measurements: int) -> List[np.matrix]:
+    mean = np.array([0.7, 0.7])
+    cov = np.array([[0.05, 0.], [0., 0.05]])
+    measurements = []
+    for _ in range(num_measurements):
+        measurements.append(np.matrix(np.random.multivariate_normal(mean, cov, 1)))
+    return measurements
+
+
 def generate_measurements(num_range: List[int]) -> List[np.matrix]:
     num_measurements = np.random.randint(*num_range)
-    return sample_from_rect(num_measurements)
+    num_outliers = int(num_measurements / 5)
+    measurements = sample_from_rect(num_measurements)
+    measurements.extend(sample_from_gaussian(num_outliers))
+    return measurements
 
 
 def main():
     num_measurements_range = [30, 40]
-    num_frames = 10
-    num_variable_nodes = 2
+    num_frames = 2
+    num_variable_nodes = 1
     use_huber = False
     target_distance = 0.5
 

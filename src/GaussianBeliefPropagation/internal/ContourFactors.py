@@ -53,18 +53,19 @@ def measurement_factor(means: List[np.matrix], measurement_point) -> np.matrix:
     distances = []
     sum_inv_dist = 0
     for p in means:
-        dist = np.linalg.norm(measurement_point - p) ** 3
+        dist = np.linalg.norm(measurement_point - p) ** 4
         # dist = np.asscalar((measurement_point - p) @ np.linalg.inv(np.matrix([[0.1, 0], [0, 0.1]])) @ (measurement_point - p).T)
         # dist = np.square(dist)
         distances.append(dist)
         sum_inv_dist += 1. / dist
     measurement = []
+    min_dist_idx = np.argmin(distances)
     for i in range(len(means)):
         mean = means[i]
         dist = distances[i]
         direction = measurement_point - mean
-
-        measurement.append(direction * (1 / (dist * sum_inv_dist)))
+        w = (1 / (dist * sum_inv_dist))
+        measurement.append(direction * w)
     return -np.matrix(np.array(measurement)).flatten()
 
 

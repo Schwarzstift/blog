@@ -53,9 +53,10 @@ def measurement_factor(means: List[np.matrix], measurement_point) -> np.matrix:
     distances = []
     sum_inv_dist = 0
     for p in means:
-        dist = np.linalg.norm(measurement_point - p) ** 4
-        # dist = np.asscalar((measurement_point - p) @ np.linalg.inv(np.matrix([[0.1, 0], [0, 0.1]])) @ (measurement_point - p).T)
-        # dist = np.square(dist)
+        dist = np.linalg.norm(measurement_point - p)
+        # dist = np.asscalar(np.sqrt(
+        #    (measurement_point - p) @ np.linalg.inv(np.matrix([[0.001, 0], [0, 0.001]])) @ (measurement_point - p).T))
+        dist = dist ** 4
         distances.append(dist)
         sum_inv_dist += 1. / dist
     measurement = []
@@ -83,4 +84,71 @@ def measurement_factor_jac(means: List[np.matrix], measurement_point) -> ndarray
         direction = -1 + d / sum_dist - d * d * (sum_dist / d + 1) / (sum_dist * sum_dist)
         direction_vectors.append(-direction)
 
+    return np.identity(len(means) * 2)
+
+
+# -------------------------------------------------------------------------------
+
+
+def line_measurement_factor(means: List[np.matrix], measurement_point) -> np.matrix:
+    best_measurement = None
+    diff = np.finfo(float).max
+    for i in range(len(means) - 1):
+        a, b = means[i], means[i + 1]
+        ab = b - a
+        ab_length = np.linalg.norm(ab)
+        m = measurement_point - a
+        projection_point = ((ab.T @ ab) / (ab @ ab.T) @ m.T + a.T).T
+        if np.linalg.norm(projection_point - a + ab) < ab_length:
+            # projection behind a
+            measurement = [measurement_point - a, np.zeros_like(m)]
+            reference_point = a
+        elif np.linalg.norm(projection_point - b - ab) < ab_length:
+            # projection behind b
+            measurement = [np.zeros_like(m), measurement_point - b]
+            reference_point = b
+        else:
+            # projection on ab
+            reference_point = projection_point
+            projection_vector = measurement_point - projection_point
+            residual = np.linalg.norm(projection_vector)
+            lam = np.linalg.norm(projection_point - a) / ab_length
+            a_vec = (measurement_point - a)
+            b_vec = (measurement_point - b)
+
+            # if lam < 0.5:
+            #     b_vec = projection_vector
+            # else:
+            #     a_vec = projection_vector
+
+            measurement = [a_vec * residual * (1 - lam)+projection_vector, b_vec * residual * lam+projection_vector]
+
+        if len(means) > 2:
+            if i == 0:
+                measurement.append(np.zeros_like(m))
+            else:
+                measurement.insert(0, np.zeros_like(m))
+        measurement = np.matrix(np.array(measurement)).flatten()
+        d = np.linalg.norm(reference_point - measurement_point)
+        if diff > d:
+            diff = d
+            best_measurement = measurement
+    return -np.matrix(best_measurement).flatten()
+
+
+def line_measurement_factor_jac(means: List[np.matrix], measurement_point) -> np.matrix:
+    return np.identity(len(means) * 2)
+
+
+# -------------------------------------------------------------------------------
+
+def line_collapse_factor(means: List[np.matrix], collapse_force) -> np.matrix:
+    a, b = means
+    ab = a - b
+    ab /= np.linalg.norm(ab)
+    ab *= collapse_force
+    return -np.matrix(np.array([-ab, ab]).flatten())
+
+
+def line_collapse_factor_jac(means: List[np.matrix], collapse_force) -> np.matrix:
     return np.identity(len(means) * 2)

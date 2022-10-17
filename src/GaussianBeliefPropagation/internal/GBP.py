@@ -25,7 +25,7 @@ class GaussianState:
         :param sigma: covariance
         """
         self.lam = np.linalg.inv(sigma)
-        self.eta = mu@self.lam
+        self.eta = mu @ self.lam
 
     def get_values(self):
         """
@@ -190,9 +190,9 @@ class FactorNode:
         """
         if self.huber_energy:
             predicted_measurement = self.measurement_fn(self.linearization_point, *self.args)
-            res = self.measurement - predicted_measurement
+            res = self.measurement.T - predicted_measurement
 
-            mahalanobis_dist = np.linalg.norm(res) / np.sqrt(self.measurement_noise)
+            mahalanobis_dist = np.asscalar(np.sqrt(res @ np.linalg.inv(self.measurement_noise) @ res.T))
             if mahalanobis_dist > self.huber_mahalanobis_threshold:
                 self.adaptive_measurement_noise_lam = np.linalg.inv(
                     self.measurement_noise * np.square(mahalanobis_dist) / (2 * (
@@ -317,12 +317,12 @@ class FactorGraph:
         """
         Calls synchronous iteration until a convergence criteria is met or
         """
-        i=0
+        i = 0
         for i in range(1000):
             prior_means = np.array([v.belief.get_values()[0] for v in self.variable_nodes]).flatten()
             self.synchronous_iteration()
             posterior_means = np.array([v.belief.get_values()[0] for v in self.variable_nodes]).flatten()
             diff = np.linalg.norm(prior_means - posterior_means)
-            if diff < 0.001:
+            if diff < 0.0005:
                 break
         return i

@@ -98,14 +98,15 @@ def line_measurement_factor(means: List[np.matrix], measurement_point) -> np.mat
         ab = b - a
         ab_length = np.linalg.norm(ab)
         m = measurement_point - a
+        expected_num_points_on_line = 20.# ToDo find a way to boost a and b case
         projection_point = ((ab.T @ ab) / (ab @ ab.T) @ m.T + a.T).T
         if np.linalg.norm(projection_point - a + ab) < ab_length:
             # projection behind a
-            measurement = [measurement_point - a, np.zeros_like(m)]
+            measurement = [expected_num_points_on_line*(measurement_point - a), np.zeros_like(m)]
             reference_point = a
         elif np.linalg.norm(projection_point - b - ab) < ab_length:
             # projection behind b
-            measurement = [np.zeros_like(m), measurement_point - b]
+            measurement = [np.zeros_like(m), expected_num_points_on_line*(measurement_point - b)]
             reference_point = b
         else:
             # projection on ab
@@ -113,15 +114,14 @@ def line_measurement_factor(means: List[np.matrix], measurement_point) -> np.mat
             projection_vector = measurement_point - projection_point
             residual = np.linalg.norm(projection_vector)
             lam = np.linalg.norm(projection_point - a) / ab_length
-            a_vec = (measurement_point - a)
-            b_vec = (measurement_point - b)
+            a_vec = (reference_point - a)
+            b_vec = (reference_point - b)
 
-            # if lam < 0.5:
-            #     b_vec = projection_vector
-            # else:
-            #     a_vec = projection_vector
+            expected_num_points_on_line = 20.
+            b_vec *= lam/expected_num_points_on_line
+            a_vec *= (1 - lam)/expected_num_points_on_line
 
-            measurement = [a_vec * residual * (1 - lam)+projection_vector, b_vec * residual * lam+projection_vector]
+            measurement = [(1 - lam) * projection_vector + a_vec, lam * projection_vector + b_vec]
 
         if len(means) > 2:
             if i == 0:
@@ -142,12 +142,24 @@ def line_measurement_factor_jac(means: List[np.matrix], measurement_point) -> np
 
 # -------------------------------------------------------------------------------
 
-def line_collapse_factor(means: List[np.matrix], collapse_force) -> np.matrix:
+def line_collapse_factor(means: List[np.matrix], measurements) -> np.matrix:
     a, b = means
-    ab = a - b
-    ab /= np.linalg.norm(ab)
-    ab *= collapse_force
-    return -np.matrix(np.array([-ab, ab]).flatten())
+    dist_to_a = [np.linalg.norm(a - m) for m in measurements]
+    dist_to_b = [np.linalg.norm(b - m) for m in measurements]
+    min_dist_idx_a = np.argmin(dist_to_a)
+    min_dist_idx_b = np.argmin(dist_to_b)
+
+    m_a = measurements[min_dist_idx_a]
+    m_b = measurements[min_dist_idx_b]
+
+    ab = b - a
+    m = m_a - a
+    projection_point_a = ((ab.T @ ab) / (ab @ ab.T) @ m.T + a.T).T
+
+    m = m_b - a
+    projection_point_b = ((ab.T @ ab) / (ab @ ab.T) @ m.T + a.T).T
+
+    return -np.matrix(np.array([projection_point_a - a, projection_point_b - b])).flatten()
 
 
 def line_collapse_factor_jac(means: List[np.matrix], collapse_force) -> np.matrix:

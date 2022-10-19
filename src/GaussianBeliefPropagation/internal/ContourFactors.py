@@ -90,7 +90,7 @@ def measurement_factor_jac(means: List[np.matrix], measurement_point) -> ndarray
 # -------------------------------------------------------------------------------
 
 
-def line_measurement_factor(means: List[np.matrix], measurement_point) -> np.matrix:
+def line_measurement_factor(means: List[np.matrix], measurement_point, end_points) -> np.matrix:
     best_measurement = None
     diff = np.finfo(float).max
     for i in range(len(means) - 1):
@@ -98,28 +98,29 @@ def line_measurement_factor(means: List[np.matrix], measurement_point) -> np.mat
         ab = b - a
         ab_length = np.linalg.norm(ab)
         m = measurement_point - a
-        expected_num_points_on_line = 20.# ToDo find a way to boost a and b case
         projection_point = ((ab.T @ ab) / (ab @ ab.T) @ m.T + a.T).T
         if np.linalg.norm(projection_point - a + ab) < ab_length:
             # projection behind a
-            measurement = [expected_num_points_on_line*(measurement_point - a), np.zeros_like(m)]
+            measurement = [(measurement_point - a), np.zeros_like(m)]
             reference_point = a
         elif np.linalg.norm(projection_point - b - ab) < ab_length:
             # projection behind b
-            measurement = [np.zeros_like(m), expected_num_points_on_line*(measurement_point - b)]
+            measurement = [np.zeros_like(m), (measurement_point - b)]
             reference_point = b
         else:
             # projection on ab
             reference_point = projection_point
             projection_vector = measurement_point - projection_point
-            residual = np.linalg.norm(projection_vector)
             lam = np.linalg.norm(projection_point - a) / ab_length
-            a_vec = (reference_point - a)
-            b_vec = (reference_point - b)
 
-            expected_num_points_on_line = 20.
-            b_vec *= lam/expected_num_points_on_line
-            a_vec *= (1 - lam)/expected_num_points_on_line
+            a_end, b_end = end_points[i], end_points[i + 1]
+            expected_point_density = 22.
+            expected_points_on_line = ab_length * expected_point_density
+            a_vec, b_vec = np.zeros_like(a), np.zeros_like(b)
+            if a_end:
+                a_vec = (projection_point - a) * (1 - lam) / expected_points_on_line
+            if b_end:
+                b_vec = (projection_point - b) * lam / expected_points_on_line
 
             measurement = [(1 - lam) * projection_vector + a_vec, lam * projection_vector + b_vec]
 
@@ -136,7 +137,7 @@ def line_measurement_factor(means: List[np.matrix], measurement_point) -> np.mat
     return -np.matrix(best_measurement).flatten()
 
 
-def line_measurement_factor_jac(means: List[np.matrix], measurement_point) -> np.matrix:
+def line_measurement_factor_jac(means: List[np.matrix], measurement_point, end_points) -> np.matrix:
     return np.identity(len(means) * 2)
 
 

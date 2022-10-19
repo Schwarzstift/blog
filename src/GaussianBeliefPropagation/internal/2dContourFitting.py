@@ -171,9 +171,11 @@ def generate_line_factor_nodes(variable_nodes: List[VariableNode], measurement_n
         meas_fn = line_measurement_factor
         jac_fn = line_measurement_factor_jac
         measurement = np.matrix([0.])
+        end_points = [(min_idx - 1) == 0, min_idx == (len(variable_nodes) - 1),
+                      (min_idx + 1) == (len(variable_nodes) - 1)]
         factor_nodes.append(
             FactorNode(adj_vars, meas_fn, np.identity(len(adj_vars) * 2) * measurement_noise, measurement, jac_fn,
-                       use_huber, [m]))
+                       use_huber, [m, end_points]))
     return factor_nodes
 
 
@@ -202,7 +204,7 @@ def generate_factors(variable_nodes, use_huber, measurements, target_distance):
     #                                      measurements))
     factor_nodes.extend(
         generate_line_factor_nodes(variable_nodes, 0.1, use_huber, measurements))
-    #factor_nodes.extend(generate_line_collapse_factor_nodes(variable_nodes, .1, use_huber, measurements))
+    # factor_nodes.extend(generate_line_collapse_factor_nodes(variable_nodes, 0.5, use_huber, measurements))
     return factor_nodes
 
 
@@ -215,7 +217,7 @@ def generate_prior(num_variable_nodes: int, use_huber: bool,
 
 def reset_variable_nodes(variable_nodes: List[VariableNode]):
     for v in variable_nodes:
-        v.reset(np.identity(v.belief.lam.shape[0]) * 0.2)
+        v.reset(np.identity(v.belief.lam.shape[0]) * 0.1)
 
 
 def add_new_nodes(variable_nodes: List[VariableNode]):
@@ -296,7 +298,7 @@ class Line:
 
 
 def give_birth_line(measurements, use_huber, factor_graph: FactorGraph) -> (FactorGraph, int):
-    birth_variance = 0.1
+    birth_variance = 0.07
 
     v_nodes = factor_graph.variable_nodes
     max_dist = 0.4
@@ -306,7 +308,7 @@ def give_birth_line(measurements, use_huber, factor_graph: FactorGraph) -> (Fact
         ab = b - a
         lines.append(Line(a, ab.T))
     sum_squared_residuals = [0 for l in lines]
-    num_measurements = [1 for l in lines]  # ToDo remove lines with 0 num?
+    num_measurements = [1 for l in lines]
     for m in measurements:
         distances = []
         for l in lines:
@@ -315,13 +317,20 @@ def give_birth_line(measurements, use_huber, factor_graph: FactorGraph) -> (Fact
         if distances[min_dist_idx] < max_dist:
             sum_squared_residuals[min_dist_idx] += distances[min_dist_idx]
         num_measurements[min_dist_idx] += 1
-    variance = [ssr / num for ssr, num in zip(sum_squared_residuals, num_measurements)]
 
+    variance = [ssr / num for ssr, num in zip(sum_squared_residuals, num_measurements)]
+    print("Variances for birth")
+    print(variance)
     num_birth_components = 0
-    for i in range(len(v_nodes)-1):
+    i = 0
+    while i < len(v_nodes) - 1:
         var = variance[i]
-        if var > birth_variance:
-            v_i = v_nodes[i]
+        num = num_measurements[i]
+        v_i = v_nodes[i]
+        if num == 1 or np.linalg.norm(v_i.sigma)>0.01:  # No measurement assigned
+            del v_nodes[i] # ToDo implement death correctly
+            continue
+        elif var > birth_variance:
             v_j = v_nodes[i + 1]
             new_mu = (v_i.mu + 0.5 * (v_j.mu - v_i.mu))
             new_sigma = (v_i.sigma + v_j.sigma) / 2.
@@ -341,6 +350,7 @@ def give_birth_line(measurements, use_huber, factor_graph: FactorGraph) -> (Fact
             v_nodes.insert(i + 1, new_node)
             num_birth_components += 1
             i += 1
+        i += 1
     # reset nodes
     for idx, v in zip(range(len(v_nodes)), v_nodes):
         v.adj_factors_idx = []
@@ -398,9 +408,10 @@ def sample_from_circle(num_measurements: int) -> List[np.matrix]:
     return measurements
 
 
-def sample_from_rect(num_measurements: int) -> List[np.matrix]:
+def sample_from_rect(point_density: int) -> List[np.matrix]:
     measurements = []
-    length = np.max([np.min([1.5, 2* np.abs(1 - sample_from_rect.time / 20.)]), 0.5])
+    length = np.max([np.min([1.5, 2 * np.abs(1 - sample_from_rect.time / 20.)]), 0.5])
+    num_measurements = int(length * point_density)
     sample_from_rect.time += 1.
     for i in range(num_measurements):
         front_side = np.random.random() < 0.5
@@ -434,13 +445,13 @@ def generate_measurements(num_range: List[int]) -> List[np.matrix]:
     # measurements.extend(sample_from_circle(num_measurements))
     measurements.extend(sample_from_rect(num_measurements))
     # measurements.extend(sample_from_step(num_measurements))
-    #measurements.extend(sample_from_gaussian(num_outliers))
+    measurements.extend(sample_from_gaussian(num_outliers))
     return measurements
 
 
 def main():
-    num_measurements_range = [40, 50]
-    num_frames = 1
+    num_measurements_range = [20, 25]
+    num_frames = 25
     num_variable_nodes = 2
     use_huber = True
     target_distance = 0.5
@@ -459,7 +470,7 @@ def main():
             total_iterations += iterations
             viz.save_state(factor_graph)
             viz.save_measurements(measurements)
-            num_new_components = 0  # ToDo remove me once birth is implemented for new factor
+            num_new_components = 0
             # factor_graph, num_new_components = give_birth(measurements, use_huber, target_distance,
             #                                               factor_graph)
             factor_graph, num_new_components = give_birth_line(measurements, use_huber, factor_graph)

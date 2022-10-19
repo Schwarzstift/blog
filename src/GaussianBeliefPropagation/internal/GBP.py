@@ -319,10 +319,10 @@ class FactorGraph:
         """
         i = 0
         for i in range(1000):
-            prior_means = np.array([v.belief.get_values()[1] for v in self.variable_nodes]).flatten()
+            prior_means = np.array([v.belief.get_values()[0] for v in self.variable_nodes]).flatten()
             self.synchronous_iteration()
-            posterior_means = np.array([v.belief.get_values()[1] for v in self.variable_nodes]).flatten()
+            posterior_means = np.array([v.belief.get_values()[0] for v in self.variable_nodes]).flatten()
             diff = np.linalg.norm(prior_means - posterior_means)
-            if diff < 1e-6:
+            if diff < 0.001:
                 break
         return i

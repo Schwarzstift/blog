@@ -450,7 +450,7 @@ def generate_measurements(num_range: List[int]) -> List[np.matrix]:
     num_outliers = int(num_measurements / 7)
     measurements = []
     measurements.extend(sample_from_circle(num_measurements))
-    #measurements.extend(sample_from_rect(num_measurements))
+    measurements.extend(sample_from_rect(num_measurements))
     # measurements.extend(sample_from_step(num_measurements))
     #measurements.extend(sample_from_gaussian(num_outliers))
     return measurements

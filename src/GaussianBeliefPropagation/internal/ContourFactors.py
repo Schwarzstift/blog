@@ -115,7 +115,7 @@ def line_measurement_factor(means: List[np.matrix], measurement_point, end_point
 
             # Shrink at the end
             a_end, b_end = end_points[i], end_points[i + 1]
-            expected_point_density = 30
+            expected_point_density = 20 #  ToDo maybe extract the shrinking to another factor node with different noise and not huber energy
             expected_points_on_line = ab_length * expected_point_density
             a_vec, b_vec = np.zeros_like(a), np.zeros_like(b)
             if a_end:

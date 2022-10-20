@@ -13,14 +13,16 @@ class GlobalConfig:
     num_total_frames = 50
     num_initial_nodes = 2
     use_huber = True
+    max_iterations_per_measurement = 500
 
     transition_noise = 0.1
 
     # Line configs
-    line_factor_huber_distance = 0.03
+    line_factor_huber_distance = 0.05
     birth_line_variance = 0.1
-    death_node_sigma = 0.05
+    death_node_sigma = 0.08
     line_measurement_noise = 0.1
+    line_merge_residual = 0.05
 
 
 def confidence_ellipse(center, cov, ax, n_std=3.0, facecolor='none', **kwargs):
@@ -54,15 +56,19 @@ def confidence_ellipse(center, cov, ax, n_std=3.0, facecolor='none', **kwargs):
 class ContourPlottingViz:
     def __init__(self):
         self.measurement_list = []
+        self.measurement_idx_list = []
         self.prior_state_mu_list = []
         self.prior_state_cov_list = []
         self.posterior_state_mu_list = []
         self.posterior_state_cov_list = []
+        self.iterations_list = []
 
-    def save_measurements(self, measurements: List[np.matrix]):
+    def save_measurements(self, measurements: List[np.matrix], measurement_idx: int):
         self.measurement_list.append([np.asarray(m).flatten() for m in measurements])
+        self.measurement_idx_list.append(measurement_idx)
 
-    def save_state(self, factor_graph: FactorGraph):
+    def save_state(self, factor_graph: FactorGraph, iterations):
+        self.iterations_list.append(iterations)
         prior_mus = []
         prior_covs = []
         posterior_mus = []
@@ -83,8 +89,15 @@ class ContourPlottingViz:
         fig, ax = plt.subplots(1, 1)
 
         def animate(t):
+
+            fig.patch.set_facecolor('xkcd:orange')
+            if t + 1 < len(self.measurement_idx_list):
+                if self.measurement_idx_list[t] < self.measurement_idx_list[t + 1]:
+                    fig.patch.set_facecolor('xkcd:white')
+
             ax.clear()
-            ax.set_title("Iterations: " + str(t))
+            ax.set_title(
+                "Measurement No: " + str(self.measurement_idx_list[t]) + " Iteration: " + str(self.iterations_list[t]))
             ax.set_xlim(0, 2)
             ax.set_ylim(0, 2)
             x, y = zip(*self.measurement_list[t])
@@ -113,17 +126,7 @@ def generate_variable_nodes() -> List[VariableNode]:
     variable_nodes = []
     for i in range(GlobalConfig.num_initial_nodes):
         cov_prior = np.matrix([[1000., 0.], [0., 1000.]])
-        # pos_prior = np.random.random(2)
-
-        # a = (i / num_variable_nodes) * np.pi * 1.5
-        # r = 0.1
-        # rot_mat = np.matrix(np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]))
-        # center = np.matrix([0.5, 0.5])
-        # dir = np.matrix([1, 1]) @ rot_mat * r
-        # pos_prior = np.matrix(center + dir)
-
         pos_prior = np.matrix([(i + 1) / (GlobalConfig.num_initial_nodes + 1), 0.2])
-        # pos_prior = np.matrix([0.5, 0.6])
         prior = GaussianState(2)
         prior.set_values(pos_prior, cov_prior)
         variable_nodes.append(VariableNode(2, prior))
@@ -335,44 +338,63 @@ def give_birth_line(measurements, factor_graph: FactorGraph) -> (FactorGraph, in
         num_measurements[min_dist_idx] += 1
 
     variance = [ssr / num for ssr, num in zip(sum_squared_residuals, num_measurements)]
-    print("Variances for birth")
-    print(variance)
     num_changed_components = 0
     i = 0
     new_nodes = []
 
     while i < len(v_nodes) - 1:
         var = variance[i]
-        num = num_measurements[i]
         v_i = v_nodes[i]
         v_j = v_nodes[i + 1]
-        if len(v_nodes) > 2 and np.linalg.norm(v_i.sigma) > sigma_death:
-            i += 1
-            num_changed_components += 1
-            continue
+        if len(v_nodes) > 2:
+            if i is 0 and num_measurements[i] is 1:  # kill begin/end if doing nothing
+                i += 1
+                num_changed_components += 1
+                continue
 
+            if np.linalg.norm(v_i.sigma) > sigma_death:  # Kill because of sigma
+                i += 1
+                num_changed_components += 1
+                continue
+
+            # Kill if two lines can be combined
+            if i > 0:
+                v_k = v_nodes[i - 1]
+                line = Line(v_k.mu, (v_j.mu - v_k.mu).T)
+                is_straight_line = line.dist_2_point(v_i.mu.T) < GlobalConfig.line_merge_residual
+                if is_straight_line:  # Kill because of straight line
+                    i += 1  # ToDo fix me correctly: if deleted, the next one needs to be compared with the previous not this node
+                    if i < len(v_nodes):
+                        new_nodes.append(v_nodes[i])
+                        i += 1
+                    num_changed_components += 1
+                    continue
+        # ToDo add birth at the end if needed
         new_nodes.append(v_i)
-        if var > birth_variance:  # ToDo add two points, when birth between two nodes, add one node at the end.
-            new_mu = (v_i.mu + 0.5 * (v_j.mu - v_i.mu))
-            new_sigma = (v_i.sigma + v_j.sigma) / 2.
-            belief = GaussianState(v_i.dimensions)
-            belief.set_values(new_mu.T, new_sigma)
-            new_node = VariableNode(v_j.dimensions, belief)
-            new_node.mu = new_mu
-            new_node.sigma = new_sigma
+        if var > birth_variance:
+            for j in range(2):
+                new_mu = (v_i.mu + (1 + j) / 3 * (v_j.mu - v_i.mu))
+                new_sigma = (v_i.sigma + v_j.sigma) / (1 + j) / 3
+                belief = GaussianState(v_i.dimensions)
+                belief.set_values(new_mu.T, new_sigma)
+                new_node = VariableNode(v_j.dimensions, belief)
+                new_node.mu = new_mu
+                new_node.sigma = new_sigma
 
-            new_lam = (v_i.prior.lam + v_j.prior.lam) / 2.
-            new_eta = (v_i.prior.eta + v_j.prior.eta) * 0.5
-            prior = GaussianState(v_i.dimensions)
-            prior.lam = new_lam
-            prior.eta = new_eta
+                new_lam = (v_i.prior.lam + v_j.prior.lam) * 0.5
+                new_eta = (v_i.prior.eta + v_j.prior.eta) * 0.5
+                prior = GaussianState(v_i.dimensions)
+                prior.lam = new_lam
+                prior.eta = new_eta
 
-            new_node.prior = prior
-            new_nodes.append(new_node)
+                new_node.prior = prior
+                new_nodes.append(new_node)
             num_changed_components += 1
         i += 1
-    if len(new_nodes) < 2 or np.linalg.norm(v_nodes[-1].sigma) < sigma_death:
+    if len(new_nodes) < 2 or (np.linalg.norm(v_nodes[-1].sigma) < sigma_death and num_measurements[-1] > 1):
         new_nodes.append(v_nodes[-1])
+    else:
+        num_changed_components += 1
 
     # reset nodes
     for idx, v in zip(range(len(new_nodes)), new_nodes):
@@ -382,7 +404,6 @@ def give_birth_line(measurements, factor_graph: FactorGraph) -> (FactorGraph, in
 
     factor_nodes = generate_factors(new_nodes, measurements)
 
-    # ToDO shrink as needed
     return FactorGraph(new_nodes, factor_nodes), num_changed_components
 
 
@@ -484,16 +505,18 @@ def main():
         print("New Measurement: " + str(i))
         total_iterations = 0
         num_changed_components = 1
-        while num_changed_components != 0:
+        while (
+                num_changed_components != 0) and total_iterations < GlobalConfig.max_iterations_per_measurement:  # ToDo repeat if means moved a lot
             iterations = factor_graph.fit()
             total_iterations += iterations
-            viz.save_state(factor_graph)
-            viz.save_measurements(measurements)
+            viz.save_state(factor_graph, iterations)
+            viz.save_measurements(measurements, i)
             num_changed_components = 0
             # factor_graph, num_new_components = give_birth(measurements, use_huber, target_distance,
             #                                               factor_graph)
             factor_graph, num_changed_components = give_birth_line(measurements, factor_graph)
-            print("Iterations: " + str(iterations) + " -> had to change : " + str(num_changed_components) + " nodes")
+            print("Iterations: " + str(iterations) + " -> had to kill/birth : " + str(
+                num_changed_components) + " nodes. Num nodes: " + str(len(factor_graph.variable_nodes)))
 
         print("Total iterations: " + str(total_iterations))
         print("")

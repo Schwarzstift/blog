@@ -318,7 +318,7 @@ class FactorGraph:
         Calls synchronous iteration until a convergence criteria is met or
         """
         i = 0
-        for i in range(1000):
+        for i in range(500):
             prior_means = np.array([v.belief.get_values()[0] for v in self.variable_nodes]).flatten()
             self.synchronous_iteration()
             posterior_means = np.array([v.belief.get_values()[0] for v in self.variable_nodes]).flatten()

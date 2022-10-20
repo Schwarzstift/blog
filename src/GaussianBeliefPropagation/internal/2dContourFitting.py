@@ -298,7 +298,7 @@ class Line:
 
 
 def give_birth_line(measurements, use_huber, factor_graph: FactorGraph) -> (FactorGraph, int):
-    birth_variance = 0.07
+    birth_variance = 0.1
 
     v_nodes = factor_graph.variable_nodes
     max_dist = 0.4
@@ -323,15 +323,20 @@ def give_birth_line(measurements, use_huber, factor_graph: FactorGraph) -> (Fact
     print(variance)
     num_birth_components = 0
     i = 0
+    new_nodes = []
+    sigma_death = 0.05
+
     while i < len(v_nodes) - 1:
         var = variance[i]
         num = num_measurements[i]
         v_i = v_nodes[i]
-        if num == 1 or np.linalg.norm(v_i.sigma)>0.01:  # No measurement assigned
-            del v_nodes[i] # ToDo implement death correctly
+        v_j = v_nodes[i + 1]
+        if len(v_nodes) > 2 and np.linalg.norm(v_i.sigma) > sigma_death:
+            i += 1
             continue
-        elif var > birth_variance:
-            v_j = v_nodes[i + 1]
+
+        new_nodes.append(v_i)
+        if var > birth_variance:
             new_mu = (v_i.mu + 0.5 * (v_j.mu - v_i.mu))
             new_sigma = (v_i.sigma + v_j.sigma) / 2.
             belief = GaussianState(v_i.dimensions)
@@ -347,20 +352,22 @@ def give_birth_line(measurements, use_huber, factor_graph: FactorGraph) -> (Fact
             prior.eta = new_eta
 
             new_node.prior = prior
-            v_nodes.insert(i + 1, new_node)
+            new_nodes.append(new_node)
             num_birth_components += 1
-            i += 1
         i += 1
+    if len(new_nodes) < 2 or np.linalg.norm(v_nodes[-1].sigma) < sigma_death:
+        new_nodes.append(v_nodes[-1])
+
     # reset nodes
-    for idx, v in zip(range(len(v_nodes)), v_nodes):
+    for idx, v in zip(range(len(new_nodes)), new_nodes):
         v.adj_factors_idx = []
         v.factor_nodes = []
         v.idx = idx
 
-    factor_nodes = generate_factors(v_nodes, use_huber, measurements, 0)
+    factor_nodes = generate_factors(new_nodes, use_huber, measurements, 0)
 
     # ToDO shrink as needed
-    return FactorGraph(v_nodes, factor_nodes), num_birth_components
+    return FactorGraph(new_nodes, factor_nodes), num_birth_components
 
 
 def update_factor_graph(new_measurements: List[np.matrix], use_huber, target_distance,
@@ -442,16 +449,16 @@ def generate_measurements(num_range: List[int]) -> List[np.matrix]:
     num_measurements = np.random.randint(*num_range)
     num_outliers = int(num_measurements / 7)
     measurements = []
-    # measurements.extend(sample_from_circle(num_measurements))
-    measurements.extend(sample_from_rect(num_measurements))
+    measurements.extend(sample_from_circle(num_measurements))
+    #measurements.extend(sample_from_rect(num_measurements))
     # measurements.extend(sample_from_step(num_measurements))
-    measurements.extend(sample_from_gaussian(num_outliers))
+    #measurements.extend(sample_from_gaussian(num_outliers))
     return measurements
 
 
 def main():
     num_measurements_range = [20, 25]
-    num_frames = 25
+    num_frames = 50
     num_variable_nodes = 2
     use_huber = True
     target_distance = 0.5

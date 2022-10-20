@@ -9,6 +9,20 @@ import matplotlib.transforms as transforms
 np.random.seed(42)
 
 
+class GlobalConfig:
+    num_total_frames = 50
+    num_initial_nodes = 2
+    use_huber = True
+
+    transition_noise = 0.1
+
+    # Line configs
+    line_factor_huber_distance = 0.03
+    birth_line_variance = 0.1
+    death_node_sigma = 0.05
+    line_measurement_noise = 0.1
+
+
 def confidence_ellipse(center, cov, ax, n_std=3.0, facecolor='none', **kwargs):
     pearson = cov[0, 1] / np.sqrt(cov[0, 0] * cov[1, 1])
     # Using a special case to obtain the eigenvalues of this
@@ -95,9 +109,9 @@ class ContourPlottingViz:
 
 
 # ---------------------------------- Factor Graph ------------------------------------
-def generate_variable_nodes(num_variable_nodes: int) -> List[VariableNode]:
+def generate_variable_nodes() -> List[VariableNode]:
     variable_nodes = []
-    for i in range(num_variable_nodes):
+    for i in range(GlobalConfig.num_initial_nodes):
         cov_prior = np.matrix([[1000., 0.], [0., 1000.]])
         # pos_prior = np.random.random(2)
 
@@ -108,7 +122,7 @@ def generate_variable_nodes(num_variable_nodes: int) -> List[VariableNode]:
         # dir = np.matrix([1, 1]) @ rot_mat * r
         # pos_prior = np.matrix(center + dir)
 
-        pos_prior = np.matrix([(i + 1) / (num_variable_nodes + 1), 0.2])
+        pos_prior = np.matrix([(i + 1) / (GlobalConfig.num_initial_nodes + 1), 0.2])
         # pos_prior = np.matrix([0.5, 0.6])
         prior = GaussianState(2)
         prior.set_values(pos_prior, cov_prior)
@@ -117,7 +131,7 @@ def generate_variable_nodes(num_variable_nodes: int) -> List[VariableNode]:
 
 
 def generate_distance_factor_nodes(variable_nodes: List[VariableNode], measurement_noise: np.matrix,
-                                   use_huber: bool, target_distance: float) -> List[FactorNode]:
+                                   target_distance: float) -> List[FactorNode]:
     factor_nodes = []
     for i in range(len(variable_nodes) - 1):
         adj_vars = [variable_nodes[i], variable_nodes[i + 1]]
@@ -125,24 +139,26 @@ def generate_distance_factor_nodes(variable_nodes: List[VariableNode], measureme
         jac_fn = distance_measurement_factor_jac
         measurement = 0.
         factor_nodes.append(
-            FactorNode(adj_vars, meas_fn, measurement_noise, measurement, jac_fn, use_huber, [target_distance]))
+            FactorNode(adj_vars, meas_fn, measurement_noise, measurement, jac_fn, GlobalConfig.use_huber,
+                       [target_distance]))
     return factor_nodes
 
 
-def generate_smoothing_factor_nodes(variable_nodes: List[VariableNode], measurement_noise: np.matrix,
-                                    use_huber: bool) -> List[FactorNode]:
+def generate_smoothing_factor_nodes(variable_nodes: List[VariableNode], measurement_noise: np.matrix) -> List[
+    FactorNode]:
     factor_nodes = []
     for i in range(1, len(variable_nodes) - 1):
         adj_vars = [variable_nodes[i - 1], variable_nodes[i], variable_nodes[i + 1]]
         meas_fn = smoothing_factor
         jac_fn = smoothing_factor_jac
         measurement = np.matrix([0.])
-        factor_nodes.append(FactorNode(adj_vars, meas_fn, measurement_noise, measurement, jac_fn, use_huber, []))
+        factor_nodes.append(
+            FactorNode(adj_vars, meas_fn, measurement_noise, measurement, jac_fn, GlobalConfig.use_huber, []))
     return factor_nodes
 
 
 def generate_measurement_factor_nodes(variable_nodes: List[VariableNode], measurement_noise: np.matrix,
-                                      use_huber: bool, measurements: List[np.matrix]) -> List[FactorNode]:
+                                      measurements: List[np.matrix]) -> List[FactorNode]:
     factor_nodes = []
     for m in measurements:
         adj_vars = variable_nodes  # ToDo maybe implement gating
@@ -150,12 +166,12 @@ def generate_measurement_factor_nodes(variable_nodes: List[VariableNode], measur
         jac_fn = measurement_factor_jac
         measurement = np.matrix([0.])
         factor_nodes.append(
-            FactorNode(adj_vars, meas_fn, measurement_noise, measurement, jac_fn, use_huber, [m]))
+            FactorNode(adj_vars, meas_fn, measurement_noise, measurement, jac_fn, GlobalConfig.use_huber, [m]))
     return factor_nodes
 
 
-def generate_line_factor_nodes(variable_nodes: List[VariableNode], measurement_noise: np.matrix,
-                               use_huber: bool, measurements: List[np.matrix]) -> List[FactorNode]:
+def generate_line_factor_nodes(variable_nodes: List[VariableNode],
+                               measurements: List[np.matrix]) -> List[FactorNode]:
     factor_nodes = []
     for m in measurements:
         adj_vars = []
@@ -173,14 +189,16 @@ def generate_line_factor_nodes(variable_nodes: List[VariableNode], measurement_n
         measurement = np.matrix([0.])
         end_points = [(min_idx - 1) == 0, min_idx == (len(variable_nodes) - 1),
                       (min_idx + 1) == (len(variable_nodes) - 1)]
-        factor_nodes.append(
-            FactorNode(adj_vars, meas_fn, np.identity(len(adj_vars) * 2) * measurement_noise, measurement, jac_fn,
-                       use_huber, [m, end_points]))
+        node = FactorNode(adj_vars, meas_fn, np.identity(len(adj_vars) * 2) * GlobalConfig.line_measurement_noise,
+                          measurement, jac_fn,
+                          GlobalConfig.use_huber, [m, end_points])
+        node.huber_mahalanobis_threshold = GlobalConfig.line_factor_huber_distance
+        factor_nodes.append(node)
     return factor_nodes
 
 
 def generate_line_collapse_factor_nodes(variable_nodes: List[VariableNode], measurement_noise: np.matrix,
-                                        use_huber: bool, measurements) -> List[FactorNode]:
+                                        measurements) -> List[FactorNode]:
     factor_nodes = []
     for i in range(1, len(variable_nodes)):
         adj_vars = [variable_nodes[i - 1], variable_nodes[i]]
@@ -189,12 +207,12 @@ def generate_line_collapse_factor_nodes(variable_nodes: List[VariableNode], meas
         measurement = np.matrix([0.])
         factor_nodes.append(
             FactorNode(adj_vars, meas_fn, np.identity(len(adj_vars) * 2) * measurement_noise, measurement, jac_fn,
-                       use_huber, [measurements]))
+                       GlobalConfig.use_huber, [measurements]))
     return factor_nodes
 
 
 # ------------------------------ Putting all together --------------------------------
-def generate_factors(variable_nodes, use_huber, measurements, target_distance):
+def generate_factors(variable_nodes, measurements):
     FactorNode.idx_counter = 0
     factor_nodes = []
     # factor_nodes.extend(generate_distance_factor_nodes(variable_nodes, np.matrix(0.0002), use_huber, target_distance))
@@ -203,21 +221,20 @@ def generate_factors(variable_nodes, use_huber, measurements, target_distance):
     #    generate_measurement_factor_nodes(variable_nodes, np.identity(len(variable_nodes) * 2) * 0.2, use_huber,
     #                                      measurements))
     factor_nodes.extend(
-        generate_line_factor_nodes(variable_nodes, 0.1, use_huber, measurements))
+        generate_line_factor_nodes(variable_nodes, measurements))
     # factor_nodes.extend(generate_line_collapse_factor_nodes(variable_nodes, 0.5, use_huber, measurements))
     return factor_nodes
 
 
-def generate_prior(num_variable_nodes: int, use_huber: bool,
-                   measurements: List[np.matrix], target_distance) -> FactorGraph:
-    variable_nodes = generate_variable_nodes(num_variable_nodes)
-    factor_nodes = generate_factors(variable_nodes, use_huber, measurements, target_distance)
+def generate_prior(measurements: List[np.matrix]) -> FactorGraph:
+    variable_nodes = generate_variable_nodes()
+    factor_nodes = generate_factors(variable_nodes, measurements)
     return FactorGraph(variable_nodes, factor_nodes)
 
 
 def reset_variable_nodes(variable_nodes: List[VariableNode]):
     for v in variable_nodes:
-        v.reset(np.identity(v.belief.lam.shape[0]) * 0.1)
+        v.reset(np.identity(v.belief.lam.shape[0]) * GlobalConfig.transition_noise)
 
 
 def add_new_nodes(variable_nodes: List[VariableNode]):
@@ -277,9 +294,9 @@ def add_new_nodes(variable_nodes: List[VariableNode]):
     return num_birth_components
 
 
-def give_birth(measurements, use_huber, target_distance, factor_graph) -> (FactorGraph, int):
+def give_birth(measurements, factor_graph) -> (FactorGraph, int):
     num_birth_components = add_new_nodes(factor_graph.variable_nodes)
-    factor_nodes = generate_factors(factor_graph.variable_nodes, use_huber, measurements, target_distance)
+    factor_nodes = generate_factors(factor_graph.variable_nodes, measurements)
 
     # ToDO shrink as needed
     return FactorGraph(factor_graph.variable_nodes, factor_nodes), num_birth_components
@@ -297,11 +314,11 @@ class Line:
         return np.linalg.norm(projection_point - point)
 
 
-def give_birth_line(measurements, use_huber, factor_graph: FactorGraph) -> (FactorGraph, int):
-    birth_variance = 0.1
+def give_birth_line(measurements, factor_graph: FactorGraph) -> (FactorGraph, int):
+    birth_variance = GlobalConfig.birth_line_variance
+    sigma_death = GlobalConfig.death_node_sigma
 
     v_nodes = factor_graph.variable_nodes
-    max_dist = 0.4
     lines = []
     for i in range(len(v_nodes) - 1):
         a, b = v_nodes[i].mu, v_nodes[i + 1].mu
@@ -314,17 +331,15 @@ def give_birth_line(measurements, use_huber, factor_graph: FactorGraph) -> (Fact
         for l in lines:
             distances.append(l.dist_2_point(m))
         min_dist_idx = np.argmin(distances)
-        if distances[min_dist_idx] < max_dist:
-            sum_squared_residuals[min_dist_idx] += distances[min_dist_idx]
+        sum_squared_residuals[min_dist_idx] += distances[min_dist_idx]
         num_measurements[min_dist_idx] += 1
 
     variance = [ssr / num for ssr, num in zip(sum_squared_residuals, num_measurements)]
     print("Variances for birth")
     print(variance)
-    num_birth_components = 0
+    num_changed_components = 0
     i = 0
     new_nodes = []
-    sigma_death = 0.05
 
     while i < len(v_nodes) - 1:
         var = variance[i]
@@ -333,10 +348,11 @@ def give_birth_line(measurements, use_huber, factor_graph: FactorGraph) -> (Fact
         v_j = v_nodes[i + 1]
         if len(v_nodes) > 2 and np.linalg.norm(v_i.sigma) > sigma_death:
             i += 1
+            num_changed_components += 1
             continue
 
         new_nodes.append(v_i)
-        if var > birth_variance:
+        if var > birth_variance:  # ToDo add two points, when birth between two nodes, add one node at the end.
             new_mu = (v_i.mu + 0.5 * (v_j.mu - v_i.mu))
             new_sigma = (v_i.sigma + v_j.sigma) / 2.
             belief = GaussianState(v_i.dimensions)
@@ -353,7 +369,7 @@ def give_birth_line(measurements, use_huber, factor_graph: FactorGraph) -> (Fact
 
             new_node.prior = prior
             new_nodes.append(new_node)
-            num_birth_components += 1
+            num_changed_components += 1
         i += 1
     if len(new_nodes) < 2 or np.linalg.norm(v_nodes[-1].sigma) < sigma_death:
         new_nodes.append(v_nodes[-1])
@@ -364,18 +380,18 @@ def give_birth_line(measurements, use_huber, factor_graph: FactorGraph) -> (Fact
         v.factor_nodes = []
         v.idx = idx
 
-    factor_nodes = generate_factors(new_nodes, use_huber, measurements, 0)
+    factor_nodes = generate_factors(new_nodes, measurements)
 
     # ToDO shrink as needed
-    return FactorGraph(new_nodes, factor_nodes), num_birth_components
+    return FactorGraph(new_nodes, factor_nodes), num_changed_components
 
 
-def update_factor_graph(new_measurements: List[np.matrix], use_huber, target_distance,
+def update_factor_graph(new_measurements: List[np.matrix],
                         factor_graph: FactorGraph) -> (FactorGraph):
     variable_nodes = factor_graph.variable_nodes
     reset_variable_nodes(variable_nodes)
     FactorNode.idx_counter = 0
-    factor_nodes = generate_factors(variable_nodes, use_huber, new_measurements, target_distance)
+    factor_nodes = generate_factors(variable_nodes, new_measurements)
 
     return FactorGraph(factor_graph.variable_nodes, factor_nodes)
 
@@ -452,40 +468,37 @@ def generate_measurements(num_range: List[int]) -> List[np.matrix]:
     measurements.extend(sample_from_circle(num_measurements))
     measurements.extend(sample_from_rect(num_measurements))
     # measurements.extend(sample_from_step(num_measurements))
-    #measurements.extend(sample_from_gaussian(num_outliers))
+    # measurements.extend(sample_from_gaussian(num_outliers))
     return measurements
 
 
 def main():
     num_measurements_range = [20, 25]
-    num_frames = 50
-    num_variable_nodes = 2
-    use_huber = True
-    target_distance = 0.5
+    num_frames = GlobalConfig.num_total_frames
 
     viz = ContourPlottingViz()
     measurements = generate_measurements(num_measurements_range)
-
-    factor_graph = generate_prior(num_variable_nodes, use_huber, measurements, target_distance)
+    factor_graph = generate_prior(measurements)
 
     for i in range(num_frames):
         print("New Measurement: " + str(i))
         total_iterations = 0
-        num_new_components = 1
-        while num_new_components != 0:
+        num_changed_components = 1
+        while num_changed_components != 0:
             iterations = factor_graph.fit()
             total_iterations += iterations
             viz.save_state(factor_graph)
             viz.save_measurements(measurements)
-            num_new_components = 0
+            num_changed_components = 0
             # factor_graph, num_new_components = give_birth(measurements, use_huber, target_distance,
             #                                               factor_graph)
-            factor_graph, num_new_components = give_birth_line(measurements, use_huber, factor_graph)
-            print("Iterations: " + str(iterations) + " added components: " + str(num_new_components))
+            factor_graph, num_changed_components = give_birth_line(measurements, factor_graph)
+            print("Iterations: " + str(iterations) + " -> had to change : " + str(num_changed_components) + " nodes")
 
         print("Total iterations: " + str(total_iterations))
+        print("")
         measurements = generate_measurements(num_measurements_range)
-        factor_graph = update_factor_graph(measurements, use_huber, target_distance, factor_graph)
+        factor_graph = update_factor_graph(measurements, factor_graph)
     viz.render()
 
 

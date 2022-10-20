@@ -113,8 +113,9 @@ def line_measurement_factor(means: List[np.matrix], measurement_point, end_point
             projection_vector = measurement_point - projection_point
             lam = np.linalg.norm(projection_point - a) / ab_length
 
+            # Shrink at the end
             a_end, b_end = end_points[i], end_points[i + 1]
-            expected_point_density = 22.
+            expected_point_density = 30
             expected_points_on_line = ab_length * expected_point_density
             a_vec, b_vec = np.zeros_like(a), np.zeros_like(b)
             if a_end:
